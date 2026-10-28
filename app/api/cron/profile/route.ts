@@ -253,6 +253,79 @@ const PROBES: Record<string, string> = {
      WHERE pp.confirmado = 1 AND pp.creacion >= '2026-01-01 03:00:00'
      GROUP BY 1, 2 ORDER BY pacientes DESC LIMIT 30`,
 
+  // Exterior = pago en dólares, definido por el dueño del producto el
+  // 2026-10-28: PayPal cobra en USD y en la base no hay ninguna columna que
+  // nombre la pasarela —`tipo` vale 1 siempre, `mercadopago` está vacía salvo
+  // en 86 filas de 2020, y el catálogo no tiene ninguna tabla de pagos
+  // aparte—. Los que pagan en dólares con IP uruguaya cuentan como exterior
+  // igual: "a veces pagan desde el exterior y dice uruguay".
+  //
+  // Paciente nuevo del exterior = su PRIMER pago confirmado fue en U$S.
+  exterior_nuevos_pais_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      JOIN pacientes p ON p.id_login = l.id
+     WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 3 DESC`,
+
+  // Las dos columnas de país, enfrentadas sobre los mismos pacientes. Decide
+  // cuál usa la pestaña: `pacientes.pais` es lo que la persona declaró y
+  // `paisIp` es desde dónde pagó ese día. No dan lo mismo.
+  exterior_pais_vs_ip: `
+    SELECT COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais_perfil,
+           COALESCE(NULLIF(pp.paisIp, ''), '(vacio)') AS pais_ip,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      JOIN pacientes p ON p.id_login = l.id
+     WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY pacientes DESC LIMIT 35`,
+
+  // Activos del exterior: sesión realizada en el mes, de alguien que alguna
+  // vez pagó en dólares. "Alguna vez" y no "su primer pago" porque un activo
+  // de octubre puede haber comprado hace dos años.
+  exterior_activos_pais_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(s.fecha, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais,
+           COUNT(DISTINCT s.id_paciente) AS pacientes
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+      JOIN pacientes p ON p.id_login = l.id
+      JOIN (SELECT DISTINCT id_paciente FROM pacientes_pagos
+             WHERE confirmado = 1 AND moneda = 'U$S') usd
+        ON usd.id_paciente = s.id_paciente
+     WHERE s.realizada = 1 AND s.fecha >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 3 DESC`,
+
+  // De dónde vinieron: el utm con el que se registró el que después pagó en
+  // dólares. Es la pregunta de si la pestaña puede decir algo de adquisición
+  // o si el exterior llega casi todo sin marcar.
+  exterior_utm_source: `
+    SELECT COALESCE(NULLIF(l.utm_source, ''), '(sin utm)') AS utm_source,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1 ORDER BY pacientes DESC LIMIT 20`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
