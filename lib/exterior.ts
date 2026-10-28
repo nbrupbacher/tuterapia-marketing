@@ -68,19 +68,22 @@ export async function leerExterior(
   meses: Rango,
 ): Promise<VistaExterior> {
   const esTotal = pais === "TOTAL";
-  const plataformas = esTotal ? [...PAISES_REALES] : [pais];
 
   return withDb(async (db) => {
     const [mensual, utm, totales] = await Promise.all([
       db.query<FilaMensual>(
+        // Sin filtrar por plataforma a propósito: las series se filtran al
+        // armarlas, pero la tarjeta de "parte de los pacientes nuevos" mide el
+        // exterior ENTERO contra el negocio entero, y con AR elegido una
+        // consulta filtrada dejaría afuera la mitad del numerador sin cambiar
+        // el denominador.
         `select to_char(mes, 'YYYY-MM') as mes, pais, origen,
                 nuevos::text, activos::text
            from marketing.exterior_mensual
-          where pais = any($1)
-            and mes > (date_trunc('month', current_date)
-                       - make_interval(months => $2))
+          where mes > (date_trunc('month', current_date)
+                       - make_interval(months => $1))
           order by mes`,
-        [plataformas, meses],
+        [meses],
       ),
       db.query<{ pais: string; utm_source: string; nuevos: string }>(
         `select pais, utm_source, sum(nuevos)::text as nuevos
@@ -103,7 +106,7 @@ export async function leerExterior(
       ),
     ]);
 
-    return armar(mensual.rows, utm.rows, totales.rows, esTotal);
+    return armar(mensual.rows, utm.rows, totales.rows, esTotal, pais);
   });
 }
 
@@ -115,12 +118,15 @@ export async function leerExterior(
  * escribir ataría la tabla al rango con el que se escribió.
  */
 export function armar(
-  filas: FilaMensual[],
+  todas: FilaMensual[],
   utmFilas: { pais: string; utm_source: string; nuevos: string }[],
   totales: { mes: string; pacientes_nuevos: string | null }[],
   esTotal: boolean,
+  pais = "TOTAL",
 ): VistaExterior {
-  const meses = [...new Set(filas.map((f) => f.mes))].sort();
+  // Los gráficos miran la plataforma elegida; la tarjeta de "parte" mira todo.
+  const filas = esTotal ? todas : todas.filter((f) => f.pais === pais);
+  const meses = [...new Set(todas.map((f) => f.mes))].sort();
   const mesEnCurso = meses[meses.length - 1];
 
   // La clave de apilado: la plataforma en TOTAL, el país del paciente adentro
@@ -148,6 +154,17 @@ export function armar(
 
   const totalDelMes = totales.find((t) => t.mes === mes)?.pacientes_nuevos;
 
+  // Sobre el exterior entero y no sobre la plataforma elegida: la tarjeta
+  // contesta cuánto pesa el exterior en el negocio, y con AR elegido un
+  // numerador filtrado contra un denominador entero no contesta ninguna de
+  // las dos preguntas.
+  const exteriorDelMes =
+    mes === null
+      ? 0
+      : todas
+          .filter((f) => f.mes === mes)
+          .reduce((a, f) => a + Number(f.nuevos), 0);
+
   return {
     meses,
     nuevos,
@@ -161,12 +178,12 @@ export function armar(
       mesPrevio,
     },
     parte: {
-      exterior: sumaDe(nuevos, mes),
+      exterior: exteriorDelMes,
       total: totalDelMes === null || totalDelMes === undefined ? 0 : Number(totalDelMes),
       mes,
     },
     utm: armarUtm(utmFilas),
-    vacia: filas.length === 0,
+    vacia: todas.length === 0,
   };
 }
 

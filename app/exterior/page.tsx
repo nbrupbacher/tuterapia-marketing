@@ -59,6 +59,76 @@ function aSeries(series: SerieExterior[], esTotal: boolean): Serie[] {
   });
 }
 
+export function PantallaExterior({
+  vista,
+  pais,
+}: {
+  vista: VistaExterior;
+  pais: string;
+}) {
+  const esTotal = pais === "TOTAL";
+
+  if (vista.vacia) {
+    return (
+      <p className="text-sm text-sec">
+        No hay datos del exterior sincronizados. Los escribe
+        /api/cron/funnel; corrélo y volvé.
+      </p>
+    );
+  }
+
+  return (
+    <>
+      <p className="border-l-2 border-gold bg-warn-bg px-3 py-2 text-sm text-texto">
+        Exterior son los pacientes que <strong>pagan en dólares</strong>, que es
+        como cobra PayPal — los que pagan desde afuera con IP uruguaya cuentan
+        igual.{" "}
+        {esTotal ? (
+          <>
+            Las barras se parten por <strong>plataforma</strong>; eligiendo AR o
+            UY se parten por el <strong>país del paciente</strong>.
+          </>
+        ) : (
+          <>
+            Dentro de la plataforma {pais}, las barras se parten por el{" "}
+            <strong>país que el paciente tiene en el perfil</strong>.
+          </>
+        )}
+      </p>
+
+      <Tarjetas vista={vista} pais={pais} />
+
+      <Bloque
+        titulo={`Pacientes nuevos del exterior · ${
+          esTotal ? "por plataforma" : `plataforma ${pais}, por país`
+        }`}
+        series={aSeries(vista.nuevos, esTotal)}
+        pais={pais}
+        pie="Nuevo es el que hizo su primera compra en el mes, y es del exterior porque esa compra fue en dólares."
+      />
+
+      <Bloque
+        titulo={`Pacientes activos del exterior · ${
+          esTotal ? "por plataforma" : `plataforma ${pais}, por país`
+        }`}
+        series={aSeries(vista.activos, esTotal)}
+        pais={pais}
+        pie="Activo es el que hizo una sesión en el mes, de alguien que alguna vez pagó en dólares — un activo de octubre puede haber comprado hace dos años."
+      />
+
+      {esTotal ? null : (
+        <p className="mt-2 text-xs text-ter">
+          Se nombran los {PAISES_NOMBRADOS} países más grandes del rango y el
+          resto va junto. La cola son unos veinte países con uno o dos pacientes
+          cada uno.
+        </p>
+      )}
+
+      <Utm vista={vista} />
+    </>
+  );
+}
+
 export default async function Exterior({
   searchParams,
 }: {
@@ -67,7 +137,6 @@ export default async function Exterior({
   const params = await searchParams;
   const ctx = await contexto(params);
   const vista = await leerExterior(ctx.pais, ctx.rango);
-  const esTotal = ctx.pais === "TOTAL";
 
   return (
     <>
@@ -75,61 +144,7 @@ export default async function Exterior({
       <Selectores activa="/exterior" ctx={ctx} conRango />
 
       <main className="contenedor pb-10 pt-6">
-        {vista.vacia ? (
-          <p className="text-sm text-sec">
-            No hay datos del exterior sincronizados. Los escribe
-            /api/cron/funnel; corrélo y volvé.
-          </p>
-        ) : (
-          <>
-            <p className="border-l-2 border-gold bg-warn-bg px-3 py-2 text-sm text-texto">
-              Exterior son los pacientes que <strong>pagan en dólares</strong>,
-              que es como cobra PayPal — los que pagan desde afuera con IP
-              uruguaya cuentan igual.{" "}
-              {esTotal ? (
-                <>
-                  Las barras se parten por <strong>plataforma</strong>; eligiendo
-                  AR o UY se parten por el <strong>país del paciente</strong>.
-                </>
-              ) : (
-                <>
-                  Dentro de la plataforma {ctx.pais}, las barras se parten por el{" "}
-                  <strong>país que el paciente tiene en el perfil</strong>.
-                </>
-              )}
-            </p>
-
-            <Tarjetas vista={vista} pais={ctx.pais} />
-
-            <Bloque
-              titulo={`Pacientes nuevos del exterior · ${
-                esTotal ? "por plataforma" : `plataforma ${ctx.pais}, por país`
-              }`}
-              series={aSeries(vista.nuevos, esTotal)}
-              pais={ctx.pais}
-              pie="Nuevo es el que hizo su primera compra en el mes, y es del exterior porque esa compra fue en dólares."
-            />
-
-            <Bloque
-              titulo={`Pacientes activos del exterior · ${
-                esTotal ? "por plataforma" : `plataforma ${ctx.pais}, por país`
-              }`}
-              series={aSeries(vista.activos, esTotal)}
-              pais={ctx.pais}
-              pie="Activo es el que hizo una sesión en el mes, de alguien que alguna vez pagó en dólares — un activo de octubre puede haber comprado hace dos años."
-            />
-
-            {esTotal ? null : (
-              <p className="mt-2 text-xs text-ter">
-                Se nombran los {PAISES_NOMBRADOS} países más grandes del rango y
-                el resto va junto. La cola son unos veinte países con uno o dos
-                pacientes cada uno.
-              </p>
-            )}
-
-            <Utm vista={vista} />
-          </>
-        )}
+        <PantallaExterior vista={vista} pais={ctx.pais} />
       </main>
     </>
   );
