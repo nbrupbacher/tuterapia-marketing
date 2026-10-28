@@ -326,6 +326,52 @@ const PROBES: Record<string, string> = {
        AND pp.creacion >= '2025-10-01 03:00:00'
      GROUP BY 1 ORDER BY pacientes DESC LIMIT 20`,
 
+  // El corte por PLATAFORMA: `login.paisDominio`, el dominio por el que entró.
+  // Es la misma dimensión que usa el resto del tablero y no tiene la
+  // ambigüedad de perfil-contra-IP: una cuenta entró por un dominio y por uno
+  // solo. Incluye CL a propósito, que el tablero excluye en todas las otras
+  // pestañas, para ver de qué tamaño es acá antes de decidir.
+  exterior_nuevos_dominio_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS dominio,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  exterior_activos_dominio_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(s.fecha, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS dominio,
+           COUNT(DISTINCT s.id_paciente) AS pacientes
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+      JOIN (SELECT DISTINCT id_paciente FROM pacientes_pagos
+             WHERE confirmado = 1 AND moneda = 'U$S') usd
+        ON usd.id_paciente = s.id_paciente
+     WHERE s.realizada = 1 AND s.fecha >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Y el utm partido por plataforma, que es la tercera parte de la pestaña.
+  exterior_utm_dominio: `
+    SELECT l.paisDominio AS dominio,
+           COALESCE(NULLIF(l.utm_source, ''), '(sin utm)') AS utm_source,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, pacientes DESC LIMIT 25`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
