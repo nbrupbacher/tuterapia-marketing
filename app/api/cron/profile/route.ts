@@ -372,6 +372,73 @@ const PROBES: Record<string, string> = {
        AND pp.creacion >= '2025-10-01 03:00:00'
      GROUP BY 1, 2 ORDER BY 1, pacientes DESC LIMIT 25`,
 
+  // El cruce que faltaba: plataforma AFUERA, país ADENTRO. Es el mismo patrón
+  // que General —en TOTAL apila por país y con un país elegido apila por
+  // plataforma—, dado vuelta: acá TOTAL apila por plataforma y entrando a AR o
+  // UY apila por el país del paciente.
+  //
+  // Los países se recortan a los cinco más grandes de cada plataforma y el
+  // resto cae en 'resto', porque hay unos veinte con uno o dos pacientes y
+  // veinte franjas de un píxel no son un gráfico. El recorte se hace del lado
+  // de MySQL para no traer las filas sueltas.
+  //
+  // CL queda afuera, como en todo el resto del tablero.
+  exterior_nuevos_dominio_pais: `
+    WITH base AS (
+      SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+             l.paisDominio AS dominio,
+             COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais,
+             pp.id_paciente
+        FROM pacientes_pagos pp
+        JOIN (SELECT id_paciente, MIN(creacion) AS primera
+                FROM pacientes_pagos WHERE confirmado = 1
+               GROUP BY id_paciente) f
+          ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+        JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+        JOIN pacientes p ON p.id_login = l.id
+       WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+         AND l.paisDominio IN ('AR', 'UY')
+         AND pp.creacion >= '2025-10-01 03:00:00'
+    ), ranking AS (
+      SELECT dominio, pais, COUNT(DISTINCT id_paciente) AS n,
+             ROW_NUMBER() OVER (PARTITION BY dominio
+                                ORDER BY COUNT(DISTINCT id_paciente) DESC) AS puesto
+        FROM base GROUP BY dominio, pais
+    )
+    SELECT b.mes, b.dominio,
+           CASE WHEN r.puesto <= 5 THEN b.pais ELSE 'resto' END AS pais,
+           COUNT(DISTINCT b.id_paciente) AS pacientes
+      FROM base b
+      JOIN ranking r ON r.dominio = b.dominio AND r.pais = b.pais
+     GROUP BY 1, 2, 3 ORDER BY 2, 1, 4 DESC`,
+
+  exterior_activos_dominio_pais: `
+    WITH base AS (
+      SELECT DATE_FORMAT(DATE_SUB(s.fecha, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+             l.paisDominio AS dominio,
+             COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais,
+             s.id_paciente
+        FROM sesiones s
+        JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+        JOIN pacientes p ON p.id_login = l.id
+        JOIN (SELECT DISTINCT id_paciente FROM pacientes_pagos
+               WHERE confirmado = 1 AND moneda = 'U$S') usd
+          ON usd.id_paciente = s.id_paciente
+       WHERE s.realizada = 1 AND l.paisDominio IN ('AR', 'UY')
+         AND s.fecha >= '2025-10-01 03:00:00'
+    ), ranking AS (
+      SELECT dominio, pais, COUNT(DISTINCT id_paciente) AS n,
+             ROW_NUMBER() OVER (PARTITION BY dominio
+                                ORDER BY COUNT(DISTINCT id_paciente) DESC) AS puesto
+        FROM base GROUP BY dominio, pais
+    )
+    SELECT b.mes, b.dominio,
+           CASE WHEN r.puesto <= 5 THEN b.pais ELSE 'resto' END AS pais,
+           COUNT(DISTINCT b.id_paciente) AS pacientes
+      FROM base b
+      JOIN ranking r ON r.dominio = b.dominio AND r.pais = b.pais
+     GROUP BY 1, 2, 3 ORDER BY 2, 1, 4 DESC`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
