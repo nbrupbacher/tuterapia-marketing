@@ -163,6 +163,96 @@ const PROBES: Record<string, string> = {
        AND l.creacion >= '2026-07-01 03:00:00'
      GROUP BY 1, 2 ORDER BY 1, 2`,
 
+  // Cómo se distingue un pago de PayPal. `tipo` ya se descartó (§9: vale 1 en
+  // los 22.164 pagos confirmados), así que quedan `mercadopago` —que puede
+  // estar vacía para lo que no pasó por MP— y `moneda`, que en §9 figura con
+  // otro precio: 43–44 USD por sesión contra ~23 equivalentes en moneda local.
+  // Solo conteos: ninguna columna de esta tabla se lee fila por fila.
+  pago_via: `
+    SELECT pp.confirmado,
+           COALESCE(pp.moneda, '(null)') AS moneda,
+           (pp.mercadopago IS NULL OR pp.mercadopago = '') AS sin_mercadopago,
+           COUNT(*) AS n,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes,
+           MIN(pp.creacion) AS primera, MAX(pp.creacion) AS ultima
+      FROM pacientes_pagos pp
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+
+  // Qué forma tiene `mercadopago`. NOMBRES de clave y largos, nunca valores:
+  // si adentro hay un payload de la pasarela puede traer datos de la persona,
+  // y lo que hace falta saber es si existe una clave que diga la pasarela.
+  pago_mercadopago_forma: `
+    SELECT JSON_VALID(pp.mercadopago) AS es_json,
+           COUNT(*) AS n,
+           MIN(CHAR_LENGTH(pp.mercadopago)) AS largo_min,
+           MAX(CHAR_LENGTH(pp.mercadopago)) AS largo_max
+      FROM pacientes_pagos pp
+     WHERE pp.mercadopago IS NOT NULL AND pp.mercadopago <> ''
+     GROUP BY 1`,
+
+  pago_mercadopago_claves: `
+    SELECT JSON_KEYS(pp.mercadopago) AS claves, COUNT(*) AS n
+      FROM pacientes_pagos pp
+     WHERE JSON_VALID(pp.mercadopago)
+     GROUP BY 1 ORDER BY n DESC LIMIT 8`,
+
+  // De qué columna sale el país de alguien del exterior. `paisDominio` es el
+  // dominio por el que entró (AR o UY) y no dónde está, así que los candidatos
+  // son `pacientes_pagos.paisIp` y `pacientes.pais`. Cruzado con las dos marcas
+  // candidatas de PayPal, para ver cuál separa a los de afuera.
+  exterior_paises: `
+    SELECT (pp.mercadopago IS NULL OR pp.mercadopago = '') AS sin_mercadopago,
+           COALESCE(pp.moneda, '(null)') AS moneda,
+           l.paisDominio AS dominio,
+           COALESCE(NULLIF(pp.paisIp, ''), '(vacio)') AS pais_ip,
+           COUNT(*) AS n,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.creacion >= '2026-01-01 03:00:00'
+     GROUP BY 1, 2, 3, 4 ORDER BY n DESC LIMIT 40`,
+
+  // `pacientes.pais` es varchar(50) y texto libre, así que lo primero es ver
+  // cuántos valores distintos hay y si están escritos igual.
+  exterior_pais_perfil: `
+    SELECT COALESCE(NULLIF(p.pais, ''), '(vacio)') AS pais_perfil,
+           l.paisDominio AS dominio,
+           COUNT(*) AS pacientes
+      FROM pacientes p
+      JOIN login l ON l.id = p.id_login AND l.tipo = 1
+     GROUP BY 1, 2 ORDER BY pacientes DESC LIMIT 40`,
+
+  // Volumen por mes de pacientes nuevos —primer pago confirmado— partido por
+  // las dos marcas candidatas. Es lo que decide si la pestaña tiene datos
+  // suficientes para una serie mensual o son tres por mes.
+  exterior_nuevos_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           (pp.mercadopago IS NULL OR pp.mercadopago = '') AS sin_mercadopago,
+           COALESCE(pp.moneda, '(null)') AS moneda,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+
+  // Y de dónde vienen: cuántos de esos tienen utm_source y cuántos no.
+  exterior_utm: `
+    SELECT (pp.mercadopago IS NULL OR pp.mercadopago = '') AS sin_mercadopago,
+           COALESCE(NULLIF(l.utm_source, ''), '(sin utm)') AS utm_source,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND pp.creacion >= '2026-01-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY pacientes DESC LIMIT 30`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
