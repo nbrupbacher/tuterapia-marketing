@@ -929,6 +929,100 @@ sola por país y mes, y un corte por `utm_source` necesitaría otra consulta en
 un job que ya corre contra el techo de 60 segundos. Si hiciera falta, el lugar
 es el grano de campaña, no esta fila.
 
+## 6 sexies. Exterior
+
+Los pacientes que **pagan en dólares**. Vive en su propia pestaña.
+
+```
+exterior = pacientes_pagos.confirmado = 1 AND moneda = 'U$S'
+```
+
+**Por qué la moneda y no la pasarela.** La pregunta original era "los que pagan
+por PayPal", y la base no tiene dónde guardarlo. Medido el 2026-10-28:
+
+| Candidato | Qué pasa |
+|---|---|
+| `pacientes_pagos.tipo` | Vale 1 en todos los pagos confirmados (§9) |
+| `pacientes_pagos.mercadopago` | Vacía salvo en **86 filas de 2020**, y no es JSON |
+| Otra tabla de pagos | No existe: el catálogo tiene 22 tablas y ninguna más de pagos |
+
+PayPal cobra en dólares, así que la moneda es la marca. Lo confirmó el dueño
+del producto: *"paypal es exterior y es lo que nos importa porque el pago es en
+dólares"*. Y con eso, **los que pagan en dólares con IP uruguaya cuentan como
+exterior igual** — *"a veces pagan desde el exterior y dice uruguay"*.
+
+### Dos dimensiones, no una
+
+| | Columna | Qué contesta |
+|---|---|---|
+| **Plataforma** | `login.paisDominio` | Por qué dominio entró: AR o UY |
+| **Origen** | `pacientes.pais` | Qué país tiene en el perfil, ISO2 |
+
+El selector de país de arriba decide cuál se dibuja, **igual que General pero
+al revés**: en TOTAL las barras se apilan por plataforma, y eligiendo AR o UY
+se apilan por el país del paciente.
+
+El origen sale del **perfil y no de la IP del pago** (`pacientes_pagos.paisIp`),
+que sería la otra candidata. Dos razones:
+
+1. La IP solo existe cuando hay un pago, y el gráfico de activos cuenta
+   sesiones. No hay con qué pintar esas barras.
+2. Aun donde existe, un paciente saltaría de país entre meses según desde
+   dónde pagó ese día.
+
+Las dos no dan lo mismo y conviene saberlo: de los pacientes del exterior de
+los últimos trece meses, 57 tienen perfil UY **e** IP uruguaya, pero 28 tienen
+perfil AR o UY con **IP de Estados Unidos**. El perfil dice de dónde es; la IP,
+desde dónde pagó.
+
+### Las dos series
+
+```
+nuevos[mes]  = su PRIMER pago confirmado cae en el mes y fue en U$S
+activos[mes] = hizo una sesión realizada en el mes, y alguna vez pagó en U$S
+```
+
+`nuevos` mira la moneda del **primer** pago, no "tiene algún pago en dólares":
+quien compró en pesos en marzo y pagó en dólares en agosto es un paciente nuevo
+de marzo, no del exterior en agosto.
+
+`activos` sí usa "alguna vez", porque un activo de octubre pudo haber comprado
+hace dos años y lo que lo hace del exterior es cómo paga.
+
+**Chile queda afuera**, como en todo el resto del tablero: 14 pacientes en trece
+meses y ninguno desde febrero de 2026.
+
+### De dónde vinieron
+
+El `utm_source` con el que se registró el que después pagó en dólares, fechado
+por el mes de esa primera compra para que conteste la misma pregunta que
+`nuevos`.
+
+La respuesta es que casi no hay: **el 89% llega sin ningún utm** (209 de 236 en
+trece meses), y la diferencia entre plataformas es grande — 96% sin marcar en
+Uruguay contra 80% en Argentina. Ninguna campaña apunta al exterior, así que
+los 23 marcados son derrame de campañas de AR y UY.
+
+Por eso el bloque muestra **siempre las dos plataformas**, sin importar el
+selector: esa diferencia es el único dato de adquisición que hay, y con una
+sola columna no se ve.
+
+### Quién escribe estas tablas
+
+`/api/cron/funnel`, no `/api/cron/sync`, por la misma razón que
+`eligieron_terapeuta` (§6 quinquies): el sync mensual muere a los 60 segundos
+sin llegar al mes anterior. Acá importa porque `activos` cuenta sesiones
+realizadas, y una sesión de septiembre puede marcarse como realizada en
+octubre — un mes escrito una sola vez quedaría corto para siempre.
+
+Se reescribe una ventana de 13 meses en cada corrida. Son tres consultas
+agrupadas y el job cierra en cuatro segundos.
+
+**Se guardan todos los orígenes, sin recortar.** El gráfico nombra los cinco más
+grandes y agrupa el resto, pero ese recorte se hace **al leer**: cuáles caen en
+la cola depende de la ventana que se esté mirando, y guardarlo recortado ataría
+la tabla al rango con el que se escribió.
+
 ## 7. UTMs
 
 Columnas en `login`: `utm_source`, `utm_campaign`, `utm_content`.
@@ -1282,6 +1376,28 @@ sola columna afuera**: `eligieron_terapeuta` (§6 quinquies), que es un estado d
 hoy y no un hecho del mes, y que por eso la reescribe este mismo job sobre los
 últimos 13 meses. El resto de la fila la sigue escribiendo `/api/cron/sync` con
 la regla de siempre.
+
+Las dos tablas del Exterior (§6 sexies) también las escribe este job y también
+reescriben su ventana:
+
+```sql
+create table marketing.exterior_mensual (
+  mes     date not null,
+  pais    text not null,   -- plataforma: login.paisDominio, 'AR' | 'UY'
+  origen  text not null,   -- país del perfil: pacientes.pais, ISO2
+  nuevos  int  not null,   -- primer pago confirmado del mes, en U$S
+  activos int  not null,   -- sesión realizada en el mes, con algún pago en U$S
+  primary key (mes, pais, origen)
+);
+
+create table marketing.exterior_utm (
+  mes        date not null,
+  pais       text not null,
+  utm_source text not null,  -- crudo; vacío = se registró sin utm
+  nuevos     int  not null,
+  primary key (mes, pais, utm_source)
+);
+```
 
 `marketing.cohorte_sesiones` se queda donde está, con la cohorte de registro
 mensual: de ahí sale la exportación de cohorte (`/api/funnel/csv`). Son dos
