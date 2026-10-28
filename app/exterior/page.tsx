@@ -3,10 +3,10 @@ import { GraficoSerie, type Serie } from "@/components/grafico-serie";
 import { identidadDe } from "@/components/identidad";
 import {
   leerExterior,
-  PAISES_NOMBRADOS,
   type SerieExterior,
   type VistaExterior,
 } from "@/lib/exterior";
+import { SIN_AGRUPAR } from "@/components/composicion";
 import { entero, porcentaje, mesCorto } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +32,12 @@ export const dynamic = "force-dynamic";
  * llega a la hoja de estilos — por eso `fill-orange-lt` no existe aunque el
  * token sí, y por eso esta lista no se construye con un template.
  *
- * Son seis porque el apilado tiene como mucho seis franjas: cinco países con
- * nombre y el resto agrupado.
+ * Doce, no seis, desde que el gráfico muestra todos los países en vez de
+ * agrupar la cola: los seis de marca y seis del degradé que ya usa el funnel.
+ * El mes más poblado llega a diecisiete franjas en los activos de Uruguay, así
+ * que después del duodécimo los colores se repiten — y ahí las franjas son de
+ * un paciente y miden un píxel, donde el color ya no distingue nada y el panel
+ * del costado es el que nombra.
  */
 const PALETA = [
   { relleno: "fill-orange", trazo: "stroke-orange" },
@@ -41,6 +45,12 @@ const PALETA = [
   { relleno: "fill-gold", trazo: "stroke-gold" },
   { relleno: "fill-orange-dk", trazo: "stroke-orange-dk" },
   { relleno: "fill-coral", trazo: "stroke-coral" },
+  { relleno: "fill-e1", trazo: "stroke-e1" },
+  { relleno: "fill-e3", trazo: "stroke-e3" },
+  { relleno: "fill-e5", trazo: "stroke-e5" },
+  { relleno: "fill-e2", trazo: "stroke-e2" },
+  { relleno: "fill-e4", trazo: "stroke-e4" },
+  { relleno: "fill-e6", trazo: "stroke-e6" },
   { relleno: "fill-dim", trazo: "stroke-dim" },
 ];
 
@@ -49,7 +59,8 @@ const COLOR_PLATAFORMA: Record<string, number> = { AR: 1, UY: 2 };
 
 function aSeries(series: SerieExterior[], esTotal: boolean): Serie[] {
   return series.map((s, i) => {
-    const color = PALETA[esTotal ? (COLOR_PLATAFORMA[s.nombre] ?? i) : i] ?? PALETA[5]!;
+    const color =
+      PALETA[esTotal ? (COLOR_PLATAFORMA[s.nombre] ?? i) : i % PALETA.length]!;
     return {
       nombre: s.nombre,
       trazo: color.trazo,
@@ -105,6 +116,7 @@ export function PantallaExterior({
         series={aSeries(vista.nuevos, esTotal)}
         pais={pais}
         pie="Nuevo es el que hizo su primera compra en el mes, y es del exterior porque esa compra fue en dólares."
+        recorte={esTotal ? undefined : SIN_AGRUPAR}
       />
 
       <Bloque
@@ -114,15 +126,8 @@ export function PantallaExterior({
         series={aSeries(vista.activos, esTotal)}
         pais={pais}
         pie="Activo es el que hizo una sesión en el mes, de alguien que alguna vez pagó en dólares — un activo de octubre puede haber comprado hace dos años."
+        recorte={esTotal ? undefined : SIN_AGRUPAR}
       />
-
-      {esTotal ? null : (
-        <p className="mt-2 text-xs text-ter">
-          Se nombran los {PAISES_NOMBRADOS} países más grandes del rango y el
-          resto va junto. La cola son unos veinte países con uno o dos pacientes
-          cada uno.
-        </p>
-      )}
 
       <Utm vista={vista} />
     </>
@@ -194,11 +199,14 @@ function Bloque({
   series,
   pais,
   pie,
+  recorte,
 }: {
   titulo: string;
   series: Serie[];
   pais: string;
   pie: string;
+  /** Sin recorte adentro de una plataforma: ahí se listan todos los países. */
+  recorte?: { minimo: number; filas: number };
 }) {
   return (
     <section className="mt-8">
@@ -210,6 +218,7 @@ function Bloque({
         identidad={identidadDe(pais)}
         apiladas
         leyendaEnCurso="mes sin cerrar"
+        recortePanel={recorte}
       />
       <p className="mt-3 text-sm text-sec">{pie}</p>
     </section>

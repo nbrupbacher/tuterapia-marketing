@@ -103,3 +103,25 @@ export function multiplo(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return SIN_DATO;
   return `${n.toFixed(1).replace(".", ",")}x`;
 }
+
+/**
+ * La banderita de un código ISO de dos letras.
+ *
+ * Sale del propio código y no de un archivo ni de una dependencia: las
+ * banderas Unicode son dos "indicadores regionales", que son las mismas dos
+ * letras corridas a otro bloque del alfabeto. `AR` son la A y la R corridas,
+ * y el sistema las dibuja juntas.
+ *
+ * **La abreviatura se muestra igual al lado.** En Windows, Chrome no dibuja
+ * estos pares como bandera —muestra las dos letras en cajitas— así que la
+ * banderita es un adorno que puede no estar, nunca el dato. Lo mismo para un
+ * país sin código: devuelve una bandera blanca y la etiqueta sigue siendo la
+ * que la pantalla ya traía.
+ */
+export function bandera(iso: string): string {
+  if (!/^[A-Za-z]{2}$/.test(iso)) return "🏳️";
+  const base = 0x1f1e6 - "A".charCodeAt(0);
+  return String.fromCodePoint(
+    ...[...iso.toUpperCase()].map((c) => base + c.charCodeAt(0)),
+  );
+}

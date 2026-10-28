@@ -19,6 +19,17 @@ const MINIMO = 0.02;
 /** With "otras" included, so the list never runs past six. */
 const FILAS = 6;
 
+/**
+ * Qué hace el panel con la cola, cuando la pantalla no quiere que la agrupe.
+ *
+ * En Volumen la cola son once plataformas de las que siete redondean a cero y
+ * agruparlas es lo que hace que la lista se lea. En Exterior la cola son
+ * países, y el pedido fue explícito: verlos, no leer "resto". Así que el
+ * recorte deja de ser una constante del componente y pasa a ser una decisión
+ * de quien lo usa.
+ */
+export const SIN_AGRUPAR = { minimo: 0, filas: Number.POSITIVE_INFINITY };
+
 export type FilaComposicion = {
   nombre: string;
   valor: number;
@@ -33,6 +44,7 @@ export function Composicion({
   meses,
   formato,
   leyendaEnCurso = "en curso",
+  recorte,
 }: {
   series: Serie[];
   indice: number;
@@ -47,11 +59,13 @@ export function Composicion({
    * sobre un mes terminado.
    */
   leyendaEnCurso?: string;
+  /** Cómo recortar la cola. Por defecto, cinco filas y "otras". */
+  recorte?: { minimo: number; filas: number };
 }) {
   const mes = meses[indice];
   if (!mes) return null;
 
-  const filas = componer(series, indice);
+  const filas = componer(series, indice, recorte);
   const total = filas.reduce((a, f) => a + f.valor, 0);
 
   return (
@@ -97,7 +111,11 @@ export function Composicion({
  * over once five named rows are taken. A list of eleven platforms where seven
  * of them round to zero is a legend again, not a reading.
  */
-export function componer(series: Serie[], indice: number): FilaComposicion[] {
+export function componer(
+  series: Serie[],
+  indice: number,
+  recorte: { minimo: number; filas: number } = { minimo: MINIMO, filas: FILAS },
+): FilaComposicion[] {
   const crudas = series
     .map((s) => ({
       nombre: s.nombre,
@@ -115,7 +133,7 @@ export function componer(series: Serie[], indice: number): FilaComposicion[] {
 
   for (const f of crudas) {
     const parte = f.valor / total;
-    if (parte >= MINIMO && nombradas.length < FILAS - 1) {
+    if (parte >= recorte.minimo && nombradas.length < recorte.filas - 1) {
       nombradas.push({ ...f, parte });
     } else {
       resto += f.valor;

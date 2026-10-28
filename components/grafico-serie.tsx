@@ -59,6 +59,7 @@ export function GraficoSerie({
   utm = [],
   rate = false,
   leyendaEnCurso,
+  recortePanel,
 }: {
   series: Serie[];
   tipo: "barras" | "linea";
@@ -77,6 +78,8 @@ export function GraficoSerie({
   rate?: boolean;
   /** Cómo nombra el panel un mes marcado. Por defecto, "en curso". */
   leyendaEnCurso?: string;
+  /** Cómo recorta el panel la cola. Por defecto, cinco filas y "otras". */
+  recortePanel?: { minimo: number; filas: number };
 }) {
   const [activo, setActivo] = useState<number | null>(null);
   const valores = series.flatMap((s) =>
@@ -350,6 +353,7 @@ export function GraficoSerie({
           meses={meses}
           formato={FORMATO[formatoId]}
           leyendaEnCurso={leyendaEnCurso}
+          recorte={recortePanel}
         />
       ) : null}
     </div>

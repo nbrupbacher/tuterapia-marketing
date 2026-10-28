@@ -1018,10 +1018,17 @@ octubre — un mes escrito una sola vez quedaría corto para siempre.
 Se reescribe una ventana de 13 meses en cada corrida. Son tres consultas
 agrupadas y el job cierra en cuatro segundos.
 
-**Se guardan todos los orígenes, sin recortar.** El gráfico nombra los cinco más
-grandes y agrupa el resto, pero ese recorte se hace **al leer**: cuáles caen en
-la cola depende de la ventana que se esté mirando, y guardarlo recortado ataría
-la tabla al rango con el que se escribió.
+**Se guardan y se muestran todos los orígenes.** No hay franja "resto": cada
+país es su propia franja, con su banderita y su código ISO al lado. Son menos
+de los que parece — el rango entero junta 22 países en Argentina y 15 en
+Uruguay, pero un mes suelto tiene entre 3 y 7 en los nuevos y hasta 17 en los
+activos, que es lo que una barra tiene que dibujar.
+
+La banderita sale del propio código ISO, sin ningún archivo ni dependencia: son
+las dos letras corridas al bloque de indicadores regionales de Unicode. **La
+abreviatura va siempre al lado**, porque Chrome en Windows no dibuja esos pares
+y muestra dos cajitas: la bandera es un adorno que puede faltar, el código es
+el dato.
 
 ## 7. UTMs
 

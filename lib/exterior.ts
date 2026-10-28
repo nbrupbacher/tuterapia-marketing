@@ -1,5 +1,6 @@
 import { withDb } from "@/lib/db";
 import { PAISES_REALES, type Rango } from "@/lib/dashboard";
+import { bandera } from "@/lib/ui/format";
 
 /**
  * La pestaña Exterior: los pacientes que pagan en dólares.
@@ -13,11 +14,20 @@ import { PAISES_REALES, type Rango } from "@/lib/dashboard";
  * escribe el cron del funnel. La pantalla no consulta MySQL nunca.
  */
 
-/** Cuántos países se nombran antes de agrupar el resto. */
-export const PAISES_NOMBRADOS = 5;
-
 /** La etiqueta del origen cuando el perfil no tiene país. */
 export const SIN_PAIS = "??";
+
+/**
+ * Cómo se nombra un origen en pantalla: la banderita y la abreviatura.
+ *
+ * La abreviatura va siempre, aunque esté la bandera. En Windows, Chrome no
+ * dibuja los pares de indicadores regionales y muestra dos cajitas, así que
+ * la bandera es un adorno que puede faltar y el código es el dato.
+ */
+export function etiquetaOrigen(origen: string): string {
+  if (origen === SIN_PAIS) return `${bandera("")} sin país`;
+  return `${bandera(origen)} ${origen}`;
+}
 
 export type Punto = { mes: string; valor: number; enCurso: boolean };
 
@@ -188,16 +198,21 @@ export function armar(
 }
 
 /**
- * Una serie por clave, con los meses completos y el resto agrupado.
+ * Una serie por clave, con los meses completos.
  *
  * Los meses sin fila para una clave llevan 0 y no un hueco: una barra apilada
  * necesita que todas las series tengan el mismo largo, y un país que no
  * apareció en marzo aportó cero, no "no se sabe".
  *
- * En TOTAL no se recorta nada: son dos plataformas. Adentro de una, se nombran
- * las cinco más grandes y el resto va junto, porque la cola son unos veinte
- * países con uno o dos pacientes y veinte franjas de un píxel no son un
- * gráfico.
+ * **No se agrupa nada.** Antes la cola caía en una franja "resto" y el pedido
+ * fue verlos: *"prefiero que los muestres que decir resto"*. Es menos cola de
+ * lo que parece — el rango entero junta 22 países en Argentina, pero un mes
+ * suelto tiene entre 3 y 7 en los nuevos y hasta 17 en los activos, que es lo
+ * que una barra tiene que dibujar.
+ *
+ * El orden es por total descendente, así que los países grandes se llevan los
+ * colores fuertes y los de un paciente quedan al final, donde la franja mide
+ * un píxel y el color ya no distingue nada.
  */
 function serie(
   filas: FilaMensual[],
@@ -226,27 +241,17 @@ function serie(
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k);
 
-  const nombradas = esTotal ? orden : orden.slice(0, PAISES_NOMBRADOS);
-  const agrupadas = esTotal ? [] : orden.slice(PAISES_NOMBRADOS);
-
   const mesEnCurso = meses[meses.length - 1];
-  const armarPuntos = (claves: string[]): Punto[] =>
-    meses.map((m) => ({
+
+  return orden.map((k) => ({
+    // La plataforma se nombra sola; el país lleva su banderita adelante.
+    nombre: esTotal ? k : etiquetaOrigen(k),
+    puntos: meses.map((m) => ({
       mes: m,
-      valor: claves.reduce((a, k) => a + (porClave.get(k)?.get(m) ?? 0), 0),
+      valor: porClave.get(k)?.get(m) ?? 0,
       enCurso: m === mesEnCurso,
-    }));
-
-  const series: SerieExterior[] = nombradas.map((k) => ({
-    nombre: k === SIN_PAIS ? "sin país" : k,
-    puntos: armarPuntos([k]),
+    })),
   }));
-
-  if (agrupadas.length > 0) {
-    series.push({ nombre: "resto", puntos: armarPuntos(agrupadas) });
-  }
-
-  return series;
 }
 
 /**
