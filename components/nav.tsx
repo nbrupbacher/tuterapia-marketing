@@ -15,7 +15,7 @@ import { Planta } from "@/components/planta";
 import { MOTIVACIONALES, leerFrasesDePlanta } from "@/lib/planta";
 
 /**
- * Header shared by every tab: five real routes, not client-side tabs, so each
+ * Header shared by every tab: six real routes, not client-side tabs, so each
  * screen is a URL that can be linked and bookmarked. Country, month and range
  * ride in the query string and survive a tab change.
  *
@@ -26,6 +26,7 @@ export const PESTANAS = [
   { href: "/ads", nombre: "Ads" },
   { href: "/funnel", nombre: "Funnel" },
   { href: "/insights", nombre: "Insights" },
+  { href: "/exterior", nombre: "Exterior" },
 ] as const;
 
 export const PAISES_UI = ["TOTAL", "AR", "UY"] as const;

@@ -4,6 +4,7 @@ import { withDb } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/auth";
 import { sincronizarFunnel, DIAS_DE_FUNNEL } from "@/lib/sync-funnel";
 import { sincronizarTerapeuta } from "@/lib/sync-terapeuta";
+import { sincronizarExterior } from "@/lib/sync-exterior";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,10 @@ export const maxDuration = 60;
  * y no en /api/cron/sync porque ese job muere a los 60 segundos sin llegar al
  * mes anterior, que es justo el que esta métrica necesita releer. Son dos
  * consultas agrupadas y este job cierra en cuatro segundos.
+ *
+ * Y las dos tablas del Exterior, por la misma razón: `activos` cuenta sesiones
+ * realizadas, y una sesión de septiembre puede marcarse como realizada en
+ * octubre, así que un mes escrito una sola vez quedaría corto para siempre.
  */
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -42,10 +47,11 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const { filas, terapeuta } = await withMysql((mysql) =>
+    const { filas, terapeuta, exterior } = await withMysql((mysql) =>
       withDb(async (db) => ({
         filas: await sincronizarFunnel(mysql, db, dias, offset),
         terapeuta: await sincronizarTerapeuta(mysql, db),
+        exterior: await sincronizarExterior(mysql, db),
       })),
     );
 
@@ -63,6 +69,7 @@ export async function GET(request: Request) {
       offset,
       filas,
       terapeuta,
+      exterior,
       ms: Date.now() - startedAt,
     });
   } catch (error) {
