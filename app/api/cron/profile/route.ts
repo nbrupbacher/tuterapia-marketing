@@ -692,6 +692,32 @@ const PROBES: Record<string, string> = {
              GROUP BY c.id) p
      GROUP BY 1 ORDER BY 1`,
 
+  // Los cupones que PARECEN una empresa, listados enteros.
+  //
+  // La regla "business es todo lo que no es promocional" se cayó al leer los
+  // nombres: el balde traía BLACKFRIDAY23, cumpleaños, cyberlunes, "fb ads",
+  // carnaval. Eso son campañas de descuento, no empresas.
+  //
+  // Las empresas, en cambio, se nombran solas: el código arranca con '#' y
+  // sigue una familia —#bienestar, #alianza, #wellness, #primera— con el
+  // nombre de la empresa pegado, y el campo `nombre` la dice en castellano
+  // ("Farmashop", "UTEC (Apoyo)", "December Labs (Compromiso)"). Vesta es la
+  // excepción: no lleva '#'.
+  //
+  // Esto lista todas, sin recortar, para armar el mapeo a mano con el dueño
+  // del producto. Hay '#' que NO son empresa (#promocomunidad,
+  // #Miprimerasesión, #BeneficioTuTerapia), y por eso la lista se mira en vez
+  // de convertirse en regla de una.
+  cupones_con_numeral: `
+    SELECT c.codigo, c.nombre, c.pais, c.porcentaje, c.activo,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE c.codigo LIKE '#%' OR LOWER(c.codigo) LIKE 'vesta%'
+     GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
+     ORDER BY pacientes DESC LIMIT 200`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
