@@ -7,9 +7,14 @@ import {
   type SerieBusiness,
   type VistaBusiness,
 } from "@/lib/business";
+import {
+  leerRevenueBusiness,
+  type Monto,
+  type VistaRevenue,
+} from "@/lib/business-revenue";
 import type { Punto } from "@/lib/desglose";
 import { SIN_AGRUPAR } from "@/components/composicion";
-import { entero, porcentaje, mesCorto } from "@/lib/ui/format";
+import { entero, porcentaje, mesCorto, nombreDeMes, usd } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +29,9 @@ export const dynamic = "force-dynamic";
  * personas). Lo eligió el dueño del producto sobre achicar las franjas, y el
  * pie lo avisa. Los nuevos no tienen ese problema porque se entra con el cupón
  * de una sola empresa.
+ *
+ * Al final, cuánto aporta cada empresa: lo que entra por fee y por cupón, y lo
+ * que queda de eso.
  */
 
 /**
@@ -51,6 +59,10 @@ const PALETA = [
 /** En TOTAL cada plataforma lleva su color de identidad, como en General. */
 const COLOR_PLATAFORMA: Record<string, number> = { AR: 1, UY: 2 };
 
+/** Los dos colores del revenue: lo que entra por fee y lo que entra por cupón. */
+const COLOR_FEE = { relleno: "fill-teal", trazo: "stroke-teal", punto: "bg-teal" };
+const COLOR_CUPON = { relleno: "fill-orange", trazo: "stroke-orange", punto: "bg-orange" };
+
 function aSeries(series: SerieBusiness[], porPlataforma: boolean): Serie[] {
   return series.map((s, i) => {
     const color =
@@ -68,9 +80,11 @@ function aSeries(series: SerieBusiness[], porPlataforma: boolean): Serie[] {
 
 export function PantallaBusiness({
   vista,
+  revenue,
   pais,
 }: {
   vista: VistaBusiness;
+  revenue: VistaRevenue;
   pais: string;
 }) {
   const esTotal = pais === "TOTAL";
@@ -127,6 +141,8 @@ export function PantallaBusiness({
       />
 
       <Empresas vista={vista} />
+
+      <Revenue revenue={revenue} pais={pais} />
     </>
   );
 }
@@ -138,7 +154,10 @@ export default async function Business({
 }) {
   const params = await searchParams;
   const ctx = await contexto(params);
-  const vista = await leerBusiness(ctx.pais, ctx.rango);
+  const [vista, revenue] = await Promise.all([
+    leerBusiness(ctx.pais, ctx.rango),
+    leerRevenueBusiness(ctx.pais, ctx.rango),
+  ]);
 
   return (
     <>
@@ -146,7 +165,7 @@ export default async function Business({
       <Selectores activa="/business" ctx={ctx} conRango />
 
       <main className="contenedor pb-10 pt-6">
-        <PantallaBusiness vista={vista} pais={ctx.pais} />
+        <PantallaBusiness vista={vista} revenue={revenue} pais={ctx.pais} />
       </main>
     </>
   );
@@ -369,6 +388,165 @@ function Empresas({ vista }: { vista: VistaBusiness }) {
         </aside>
       </div>
     </section>
+  );
+}
+
+/**
+ * Cuánto aporta cada empresa, al final de la pestaña.
+ *
+ * Dos colores y nada más, a pedido del dueño del producto: lo que entra por
+ * fee y lo que entra por cupón. Las alianzas y demos son cupón y entran con
+ * ingreso cero. "Ganancia" es el mismo margen que General —la comisión del
+ * país sobre lo cobrado—, así que una sesión deja unos US$10 en Uruguay y
+ * US$6 en Argentina (lib/metrics).
+ */
+function Revenue({ revenue, pais }: { revenue: VistaRevenue; pais: string }) {
+  if (revenue.falta) {
+    return (
+      <section className="mt-10">
+        <h2 className="text-xs uppercase tracking-wide text-ter">
+          Revenue de empresas
+        </h2>
+        <p className="mt-3 text-sm text-sec">{revenue.falta}</p>
+      </section>
+    );
+  }
+
+  const { mes, mesPrevio, total, totalPrevio, fee, cupon } = revenue;
+  const series: Serie[] = [
+    {
+      nombre: "Fee",
+      ...COLOR_FEE,
+      puntos: revenue.meses.map((m) => ({ mes: m.mes, valor: m.fee, enCurso: m.enCurso })),
+    },
+    {
+      nombre: "Cupón",
+      ...COLOR_CUPON,
+      puntos: revenue.meses.map((m) => ({ mes: m.mes, valor: m.cupon, enCurso: m.enCurso })),
+    },
+  ];
+
+  return (
+    <section className="mt-10">
+      <h2 className="text-xs uppercase tracking-wide text-ter">
+        Revenue de empresas{mes ? ` · ${nombreDeMes(mes)}` : ""}
+      </h2>
+
+      <div className="mt-3 grid gap-[10px] md:grid-cols-3">
+        <CardMonto
+          nombre="Total Business"
+          monto={total}
+          pie={movimiento(total.ganancia, totalPrevio.ganancia, mesPrevio)}
+          tono={tono(total.ganancia, totalPrevio.ganancia)}
+        />
+        <CardMonto
+          nombre="Por fee"
+          punto={COLOR_FEE.punto}
+          monto={fee}
+          pie={`${fee.empresas} ${fee.empresas === 1 ? "empresa" : "empresas"}`}
+          tono="text-ter"
+        />
+        <CardMonto
+          nombre="Por cupón"
+          punto={COLOR_CUPON.punto}
+          monto={cupon}
+          pie={`${cupon.empresas} ${cupon.empresas === 1 ? "empresa" : "empresas"}`}
+          tono="text-ter"
+        />
+      </div>
+
+      <h3 className="mt-6 text-xs uppercase tracking-wide text-ter">
+        Ganancia por mes
+      </h3>
+      <GraficoSerie
+        series={series}
+        tipo="barras"
+        formatoId="usd"
+        identidad={identidadDe(pais)}
+        apiladas
+        leyendaEnCurso="mes sin cerrar"
+        utm={revenue.porEmpresa}
+        clavesMono={false}
+      />
+      <p className="mt-3 text-sm text-sec">
+        Ingreso es lo que pagó la empresa —su fee, o su parte de cada sesión—
+        más lo que pagaron los pacientes con el cupón, con IVA. Ganancia es lo
+        que se queda Tu Terapia: la comisión del país sobre ese ingreso, igual
+        que en General. Pasando el mouse por un mes se ve la ganancia de cada
+        empresa, en dólares. El fee cuenta en los meses en que la empresa tuvo
+        alguna sesión.
+      </p>
+
+      {revenue.empresas.length > 0 && mes ? (
+        <div className="mt-6">
+          <h3 className="text-xs uppercase tracking-wide text-ter">
+            Aporte por empresa · {nombreDeMes(mes)}
+          </h3>
+          <div className="mt-2 flex items-baseline justify-between gap-2 pb-1 text-[11px] text-ter">
+            <span>empresa</span>
+            <span className="flex gap-6">
+              <span className="w-16">entró por</span>
+              <span className="w-16 text-right">sesiones</span>
+              <span className="w-24 text-right">ingreso</span>
+              <span className="w-24 text-right">ganancia</span>
+            </span>
+          </div>
+          {revenue.empresas.map((e) => (
+            <div
+              key={`${e.empresa}|${e.tipo}`}
+              className="flex items-baseline justify-between gap-2 border-t border-borde py-2 text-xs"
+            >
+              <span className="truncate text-texto">{e.empresa}</span>
+              <span className="flex gap-6 tabular-nums">
+                <span className="flex w-16 items-center gap-1.5 text-sec">
+                  <span
+                    className={`inline-block h-2 w-2 rounded-sm ${
+                      e.tipo === "fee" ? COLOR_FEE.punto : COLOR_CUPON.punto
+                    }`}
+                  />
+                  {e.tipo === "fee" ? "fee" : "cupón"}
+                </span>
+                <span className="w-16 text-right text-ter">{entero(e.sesiones)}</span>
+                <span className="w-24 text-right text-sec">{usd(e.ingreso)}</span>
+                <span className="w-24 text-right text-texto">{usd(e.ganancia)}</span>
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function CardMonto({
+  nombre,
+  punto,
+  monto,
+  pie,
+  tono,
+}: {
+  nombre: string;
+  punto?: string;
+  monto: Monto;
+  pie: string;
+  tono: string;
+}) {
+  return (
+    <div className="rounded-lg border border-borde bg-surface px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-xs text-sec">
+        {punto ? <span className={`inline-block h-2 w-2 rounded-sm ${punto}`} /> : null}
+        {nombre}
+      </p>
+      <p className="mt-1 flex items-baseline justify-between gap-2 text-xs text-ter">
+        <span>ingreso</span>
+        <span className="tabular-nums text-sec">{usd(monto.ingreso)}</span>
+      </p>
+      <p className="mt-0.5 flex items-baseline justify-between gap-2 text-xs text-ter">
+        <span>ganancia</span>
+        <span className="text-xl tabular-nums text-texto">{usd(monto.ganancia)}</span>
+      </p>
+      <p className={`mt-0.5 truncate text-xs ${tono}`}>{pie}</p>
+    </div>
   );
 }
 
