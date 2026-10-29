@@ -1094,6 +1094,56 @@ Los 69 del segundo tramo son el motivo de que se eligiera "alguna vez" y no
 "compró ese mes": son los que compraron un pack con el cupón y todavía están
 haciendo esas sesiones. La cola muerta son 14 personas, un 3,6%.
 
+### Que son nuevos de verdad: el control
+
+La definición cuelga de dos cosas que no se probaron al escribirla, y las dos
+se midieron el 2026-10-29 contra producción.
+
+**Que `pacientes_cupones.id_pago` apunte a `pacientes_pagos.id`.** Los nombres
+coinciden y los tipos también, y eso no prueba nada: podría ser otro espacio de
+ids y el cupón quedaría atado al pago equivocado. La prueba es que el PACIENTE
+del pago sea el del cupón, porque si fueran espacios distintos coincidirían por
+casualidad en una fracción mínima.
+
+| | |
+|---|---|
+| filas de cupón con `id_pago` | 26.601 |
+| `id_pago` que no existe en `pacientes_pagos` | 0 |
+| el paciente del pago **es** el del cupón | 26.601 (100%) |
+| el paciente es otro | 0 |
+| fecha del cupón contra la del pago, ±1 día | 26.601 (100%) |
+
+**Que el número cierre contra General.** Septiembre de 2026:
+
+| | |
+|---|---|
+| pacientes nuevos del mes (§6, `PRIMER_PAGO`) | 877 |
+| de esos, entraron con cupón de empresa | 54 |
+| usaron cupón de empresa en un pago que **no** era el primero | 273 |
+| contados como nuevos con un pago confirmado anterior | 0 |
+
+Los 877 son los mismos 621 de AR + 256 de UY que muestra General, y los 54 son
+los 14 + 40 de Business.
+
+Los **273** son la razón de ser de la definición: si fuera "usó un cupón de
+empresa este mes", septiembre daría 327 en vez de 54 — seis veces más. Son
+pacientes viejos recomprando con el cupón de su empresa. Son activos, no
+nuevos.
+
+### El grano diario
+
+`marketing.business_diario`, los últimos **45 días** —la misma ventana que
+Movimientos en General, para que las dos pestañas se lean una contra otra sin
+recalibrar el ojo—.
+
+**Solo nuevos.** Los activos no tienen versión diaria que signifique algo: su
+definición es "sesión en el mes, de alguien que ya tenía cupón al cierre de ese
+mes", y un día no tiene cierre de mes.
+
+Se parte igual que la barra mensual: por plataforma en TOTAL, por empresa
+adentro de una. Verificado el 2026-10-29: sumando los días de octubre da 15 en
+AR y 34 en UY, exactamente lo que trae la fila mensual.
+
 ### La pestaña
 
 Las barras siguen el patrón de Exterior (§6 sexies): en TOTAL se parten por
@@ -1489,6 +1539,18 @@ La fila `empresa = 'TODAS'` trae el total del mes **ya deduplicado** y no es la
 suma de las otras: alguien que usó cupones de dos empresas aparece en las dos
 filas. Las barras leen `TODAS`, la tabla lee el resto, y ninguno se deriva del
 otro.
+
+Y el grano diario de Business, los últimos 45 días:
+
+```sql
+create table marketing.business_diario (
+  fecha   date not null,
+  pais    text not null,   -- plataforma: login.paisDominio, 'AR' | 'UY'
+  empresa text not null,   -- nombre de la empresa, o 'TODAS'
+  nuevos  int  not null,   -- primer pago del día, con cupón de esa empresa
+  primary key (fecha, pais, empresa)
+);
+```
 
 Las dos tablas del Exterior (§6 sexies) también las escribe este job y también
 reescriben su ventana:
