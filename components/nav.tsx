@@ -27,6 +27,7 @@ export const PESTANAS = [
   { href: "/funnel", nombre: "Funnel" },
   { href: "/insights", nombre: "Insights" },
   { href: "/exterior", nombre: "Exterior" },
+  { href: "/business", nombre: "Business" },
 ] as const;
 
 export const PAISES_UI = ["TOTAL", "AR", "UY"] as const;

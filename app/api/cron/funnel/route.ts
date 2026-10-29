@@ -5,6 +5,7 @@ import { isCronAuthorized } from "@/lib/auth";
 import { sincronizarFunnel, DIAS_DE_FUNNEL } from "@/lib/sync-funnel";
 import { sincronizarTerapeuta } from "@/lib/sync-terapeuta";
 import { sincronizarExterior } from "@/lib/sync-exterior";
+import { sincronizarBusiness } from "@/lib/sync-business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,10 @@ export const maxDuration = 60;
  * Y las dos tablas del Exterior, por la misma razón: `activos` cuenta sesiones
  * realizadas, y una sesión de septiembre puede marcarse como realizada en
  * octubre, así que un mes escrito una sola vez quedaría corto para siempre.
+ *
+ * Y Business, igual. Reescribir sus meses viejos no los cambia —los activos se
+ * miden al cierre de cada mes, no a hoy—, y que no cambien es precisamente lo
+ * que hay que poder comprobar todas las noches.
  */
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -47,11 +52,12 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const { filas, terapeuta, exterior } = await withMysql((mysql) =>
+    const { filas, terapeuta, exterior, business } = await withMysql((mysql) =>
       withDb(async (db) => ({
         filas: await sincronizarFunnel(mysql, db, dias, offset),
         terapeuta: await sincronizarTerapeuta(mysql, db),
         exterior: await sincronizarExterior(mysql, db),
+        business: await sincronizarBusiness(mysql, db),
       })),
     );
 
@@ -70,6 +76,7 @@ export async function GET(request: Request) {
       filas,
       terapeuta,
       exterior,
+      business,
       ms: Date.now() - startedAt,
     });
   } catch (error) {

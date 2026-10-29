@@ -1030,6 +1030,84 @@ abreviatura va siempre al lado**, porque Chrome en Windows no dibuja esos pares
 y muestra dos cajitas: la bandera es un adorno que puede faltar, el código es
 el dato.
 
+## 6 septies. Business
+
+Los pacientes que llegan con el **cupón de una empresa**. Lo pidió el dueño del
+producto el 2026-10-29: *"business usa ciertos cupones"*.
+
+### Qué es un cupón de empresa
+
+La base no lo dice. `cupones` es `id, codigo, nombre, pais, fecha`, los
+límites, `porcentaje` y `activo`: **no hay columna de tipo ni de cliente**.
+
+El primer intento fue definirlo por descarte —business es todo cupón que no sea
+promocional— y **estaba mal**. Ese balde traía `BLACKFRIDAY23`, `cumpleaños`,
+`cyberlunes`, `carnaval`, `hotsale25` y tres cupones llamados literalmente
+`"fb ads"`. Daba 803 cupones y 5.690 usos; las empresas de verdad son ~1.600.
+Septiembre pasaba de 67 nuevos y 682 activos a **53 y 388**.
+
+Lo que sí distingue a una empresa es **cómo se llama el cupón**: el código
+arranca con `#` y sigue una familia (`#bienestar`, `#alianza`, `#wellness`,
+`#primera`) con el nombre pegado, y `nombre` lo dice en castellano —"Farmashop",
+"UTEC (Apoyo)", "December Labs (Compromiso)"—. Vesta es la única familia sin
+`#`. Pero `#` solo no alcanza: `#promocomunidad`, `#Miprimerasesión` y
+`#BeneficioTuTerapia` también lo llevan y son campañas.
+
+Así que el mapeo es **una lista revisada a mano**, en `lib/empresas.ts`, con el
+porqué de cada decisión en `EMPRESAS.md`. Son 68 empresas. Funciona como
+`marketing.utm_mapping`: patrones ordenados, gana el primero que matchea.
+
+### Dato personal
+
+Varias empresas emiten **un cupón por empleado** y le ponen el nombre de esa
+persona: son pacientes en tratamiento. Por eso `sqlEmpresa()` se arma en
+TypeScript pero **corre dentro de MySQL**: el nombre del cupón se compara allá
+y de la base solo sale el nombre de la empresa. Ninguna tabla de Supabase lo
+guarda y la pantalla no lo muestra.
+
+### Las dos métricas
+
+**Paciente nuevo de empresa** — su primer pago confirmado cayó en el mes **y a
+ese pago se le aplicó un cupón de empresa**.
+
+No "usó un cupón de empresa alguna vez": esa lectura hace crecer un mes ya
+cerrado cada vez que un paciente viejo se suma a una empresa, y el tablero no
+recalcula meses cerrados.
+
+**Paciente activo de empresa** — sesión realizada en el mes, de alguien que ya
+tenía un cupón de empresa **al cierre de ese mes**.
+
+El corte al cierre del mes, y no a hoy, es lo que hace que un mes cerrado no
+cambie nunca. Es la misma propiedad que pide la regla del job, conseguida en la
+definición en vez de en el calendario.
+
+Se midió antes de elegirla. De los 388 activos de septiembre de 2026:
+
+| Último cupón de empresa | pacientes |
+|---|---|
+| en septiembre mismo | 282 |
+| 1 a 3 meses antes | 69 |
+| 3 a 12 meses antes | 22 |
+| más de un año antes | 14 |
+
+Los 69 del segundo tramo son el motivo de que se eligiera "alguna vez" y no
+"compró ese mes": son los que compraron un pack con el cupón y todavía están
+haciendo esas sesiones. La cola muerta son 14 personas, un 3,6%.
+
+### La pestaña
+
+Las barras se parten **siempre por plataforma** y la empresa va en una tabla
+aparte. Hay entre 33 y 46 empresas distintas por mes y la cola es larga:
+apilada por empresa, la barra sería cuarenta franjas de un píxel.
+
+La tabla mide **el rango que se está mirando**, no toda la historia. Con toda
+la historia, SiSi entraba al top con 20 pacientes aunque su último cupón es de
+diciembre de 2024, sentada al lado de Pilay, que arrancó el 2026-09-24.
+
+`activos` en esa tabla es **volumen, no gente distinta**: una empresa con el
+mismo paciente doce meses seguidos suma doce. Por eso va la cantidad de meses
+al lado.
+
 ## 7. UTMs
 
 Columnas en `login`: `utm_source`, `utm_campaign`, `utm_content`.
@@ -1383,6 +1461,24 @@ sola columna afuera**: `eligieron_terapeuta` (§6 quinquies), que es un estado d
 hoy y no un hecho del mes, y que por eso la reescribe este mismo job sobre los
 últimos 13 meses. El resto de la fila la sigue escribiendo `/api/cron/sync` con
 la regla de siempre.
+
+Y `marketing.business_mensual` (§6 septies), igual:
+
+```sql
+create table marketing.business_mensual (
+  mes     date not null,
+  pais    text not null,   -- plataforma: login.paisDominio, 'AR' | 'UY'
+  empresa text not null,   -- nombre de la empresa, o 'TODAS'
+  nuevos  int  not null,   -- primer pago del mes, con cupón de esa empresa
+  activos int  not null,   -- sesión en el mes, con cupón de esa empresa al cierre
+  primary key (mes, pais, empresa)
+);
+```
+
+La fila `empresa = 'TODAS'` trae el total del mes **ya deduplicado** y no es la
+suma de las otras: alguien que usó cupones de dos empresas aparece en las dos
+filas. Las barras leen `TODAS`, la tabla lee el resto, y ninguno se deriva del
+otro.
 
 Las dos tablas del Exterior (§6 sexies) también las escribe este job y también
 reescriben su ventana:
