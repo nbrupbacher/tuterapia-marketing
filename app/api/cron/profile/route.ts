@@ -483,6 +483,33 @@ const PROBES: Record<string, string> = {
       FROM pacientes_cupones pc
      GROUP BY pc.id_cupon ORDER BY pacientes DESC LIMIT 25`,
 
+  // Los cupones más usados, con su nombre y su código.
+  //
+  // `cupones` no tiene ninguna columna de tipo —es id, codigo, nombre, pais,
+  // fecha, los límites, el porcentaje y activo— así que si business se
+  // distingue de promocional es por cómo se llaman. Esto es lo que decide si
+  // alcanza con una regla o hace falta una tabla de mapeo a mano.
+  //
+  // Son nombres de cupón, no de persona: lo que puede traer es el nombre de
+  // una empresa cliente, que es justo el dato que la pestaña necesitaría.
+  cupones_nombres: `
+    SELECT c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
+     ORDER BY pacientes DESC LIMIT 30`,
+
+  // Cuántos cupones distintos se usaron alguna vez, contra los 1.169 que
+  // existen: si son veinte, una tabla de mapeo es media hora de alguien.
+  cupones_cuantos: `
+    SELECT COUNT(*) AS cupones_que_existen,
+           COUNT(DISTINCT pc.id_cupon) AS usados_alguna_vez,
+           SUM(c.activo = 1) AS activos
+      FROM cupones c
+      LEFT JOIN pacientes_cupones pc ON pc.id_cupon = c.id`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
