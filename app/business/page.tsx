@@ -1,4 +1,5 @@
-import { Nav, Selectores, contexto } from "@/components/nav";
+import Link from "next/link";
+import { Nav, Selectores, contexto, conContexto } from "@/components/nav";
 import { GraficoSerie, type Serie } from "@/components/grafico-serie";
 import { GraficoDiario } from "@/components/grafico-diario";
 import { identidadDe } from "@/components/identidad";
@@ -12,6 +13,11 @@ import {
   type Monto,
   type VistaRevenue,
 } from "@/lib/business-revenue";
+import {
+  leerEmpresa,
+  veredicto,
+  type DetalleEmpresa,
+} from "@/lib/empresa";
 import type { Punto } from "@/lib/desglose";
 import { SIN_AGRUPAR } from "@/components/composicion";
 import { entero, porcentaje, mesCorto, nombreDeMes, usd } from "@/lib/ui/format";
@@ -82,10 +88,16 @@ export function PantallaBusiness({
   vista,
   revenue,
   pais,
+  detalle,
+  enlace,
 }: {
   vista: VistaBusiness;
   revenue: VistaRevenue;
   pais: string;
+  /** La empresa abierta, cuando hay una en la URL. */
+  detalle?: DetalleEmpresa | null;
+  /** Cómo se arma el enlace de una fila. Sin esto la tabla no es clickeable. */
+  enlace?: (empresa: string | null) => string;
 }) {
   const esTotal = pais === "TOTAL";
   const corte = esTotal ? "por plataforma" : `plataforma ${pais}, por empresa`;
@@ -140,7 +152,7 @@ export function PantallaBusiness({
         solapa
       />
 
-      <Empresas vista={vista} />
+      <Empresas vista={vista} detalle={detalle} enlace={enlace} />
 
       <Revenue revenue={revenue} pais={pais} />
     </>
@@ -154,9 +166,14 @@ export default async function Business({
 }) {
   const params = await searchParams;
   const ctx = await contexto(params);
-  const [vista, revenue] = await Promise.all([
+  const elegida = params.empresa?.trim() || null;
+
+  // El detalle solo se pide cuando hay una empresa en la URL: cargarlo siempre
+  // sería traer trece meses de todas para mostrar una.
+  const [vista, revenue, detalle] = await Promise.all([
     leerBusiness(ctx.pais, ctx.rango),
     leerRevenueBusiness(ctx.pais, ctx.rango),
+    elegida ? leerEmpresa(elegida, ctx.pais, ctx.rango) : Promise.resolve(null),
   ]);
 
   return (
@@ -165,7 +182,17 @@ export default async function Business({
       <Selectores activa="/business" ctx={ctx} conRango />
 
       <main className="contenedor pb-10 pt-6">
-        <PantallaBusiness vista={vista} revenue={revenue} pais={ctx.pais} />
+        <PantallaBusiness
+          vista={vista}
+          revenue={revenue}
+          pais={ctx.pais}
+          detalle={detalle}
+          enlace={(empresa) =>
+            empresa === null
+              ? conContexto("/business", ctx)
+              : conContexto("/business", ctx, { empresa })
+          }
+        />
       </main>
     </>
   );
@@ -305,12 +332,27 @@ function Diario({
  * doce meses seguidos suma doce. Por eso va la cantidad de meses al lado — una
  * empresa de un mes y ciento veinte activos no existe.
  */
-function Empresas({ vista }: { vista: VistaBusiness }) {
+/**
+ * Las empresas del rango, con su tendencia y el detalle de la elegida.
+ *
+ * La serie en miniatura va en la fila, no solo adentro del panel: son casi
+ * sesenta empresas y una cuenta que se cae tiene que verse al pasar la vista,
+ * sin abrir cincuenta y siete paneles para encontrarla.
+ */
+function Empresas({
+  vista,
+  detalle,
+  enlace,
+}: {
+  vista: VistaBusiness;
+  detalle?: DetalleEmpresa | null;
+  enlace?: (empresa: string | null) => string;
+}) {
   const { empresas, porMes } = vista;
   if (empresas.length === 0) return null;
 
-  const maximo = Math.max(...porMes.map((m) => m.empresas), 1);
   const ultimoCerrado = porMes.filter((m) => !m.enCurso).at(-1);
+  const mesPrevio = porMes.filter((m) => !m.enCurso).at(-2);
 
   return (
     <section className="mt-8">
@@ -320,74 +362,327 @@ function Empresas({ vista }: { vista: VistaBusiness }) {
 
       <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2 pb-1 text-[11px] text-ter">
-            <span>empresa</span>
-            <span className="flex gap-6">
-              <span className="w-20 text-right">nuevos</span>
-              <span className="w-24 text-right">activos</span>
-              <span className="w-16 text-right">meses</span>
+          <div className="flex items-baseline gap-2 pb-1 text-[11px] text-ter">
+            <span className="flex-1">empresa</span>
+            <span className="w-24 text-center">activos · el rango</span>
+            <span className="w-14 text-right">activos</span>
+            <span className="w-20 text-right">
+              {mesPrevio ? `vs. ${mesCorto(mesPrevio.mes)}` : "vs. anterior"}
             </span>
+            <span className="w-14 text-right">meses</span>
           </div>
 
-          {empresas.map((e) => (
-            <div
-              key={e.empresa}
-              className="flex items-baseline justify-between gap-2 border-t border-borde py-2 text-xs"
-            >
-              <span className="truncate text-texto">{e.empresa}</span>
-              <span className="flex gap-6 tabular-nums">
-                <span className="w-20 text-right text-sec">
-                  {e.nuevos === 0 ? "—" : entero(e.nuevos)}
+          {empresas.map((e) => {
+            const abierta = detalle?.empresa === e.empresa;
+            const fila = (
+              <>
+                <span className="flex-1 truncate text-texto">
+                  {abierta ? "▸ " : ""}
+                  {e.empresa}
                 </span>
-                <span className="w-24 text-right text-sec">
-                  {e.activos === 0 ? "—" : entero(e.activos)}
+                <span className="w-24">
+                  <Chispa
+                    valores={e.serie}
+                    enCurso={porMes.map((m) => m.enCurso)}
+                    color={abierta ? "bg-orange" : "bg-dim"}
+                  />
                 </span>
-                <span className="w-16 text-right text-ter">{e.meses}</span>
-              </span>
-            </div>
-          ))}
+                <span className="w-14 text-right tabular-nums text-sec">
+                  {e.ahora === 0 ? "—" : entero(e.ahora)}
+                </span>
+                <Movimiento ahora={e.ahora} antes={e.antes} />
+                <span className="w-14 text-right tabular-nums text-ter">
+                  {e.meses}
+                </span>
+              </>
+            );
+
+            const clases = `flex items-center gap-2 border-t border-borde py-2 text-xs ${
+              abierta ? "bg-surface-2" : "hover:bg-surface"
+            }`;
+
+            return enlace ? (
+              <Link
+                key={e.empresa}
+                href={enlace(abierta ? null : e.empresa)}
+                className={clases}
+                scroll={false}
+              >
+                {fila}
+              </Link>
+            ) : (
+              <div key={e.empresa} className={clases}>
+                {fila}
+              </div>
+            );
+          })}
+
+          <p className="mt-3 text-sm text-sec">
+            La columna del medio es la serie de activos del rango, para que una
+            cuenta que se está yendo se vea sin abrir nada. Clic en una fila
+            para el detalle.
+          </p>
         </div>
 
-        <aside className="rounded-lg border border-borde bg-surface px-4 py-3 lg:w-[380px] lg:shrink-0">
-          <p className="text-xs uppercase tracking-wide text-ter">
-            Cuántas empresas por mes
-          </p>
-          <p className="mt-0.5 text-xl text-texto">
-            {ultimoCerrado
-              ? `${ultimoCerrado.empresas} en ${mesCorto(ultimoCerrado.mes)}`
-              : "—"}
-          </p>
-
-          <div className="mt-3">
-            {porMes.map((m) => (
-              <div
-                key={m.mes}
-                className="flex items-center gap-3 border-t border-borde py-1 text-xs"
-              >
-                <span className="w-14 shrink-0 text-sec">
-                  {mesCorto(m.mes)}
-                  {m.enCurso ? " ·" : ""}
-                </span>
-                <div className="h-1.5 flex-1 rounded-sm bg-surface-2">
-                  <div
-                    className={`h-1.5 rounded-sm ${m.enCurso ? "bg-dim" : "bg-orange"}`}
-                    style={{ width: `${(m.empresas / maximo) * 100}%` }}
-                  />
-                </div>
-                <span className="w-6 shrink-0 text-right tabular-nums text-texto">
-                  {m.empresas}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <p className="mt-2 text-xs text-ter">
-            Una empresa cuenta en un mes si tuvo algún paciente ese mes. El
-            último lleva punto porque todavía no cerró.
-          </p>
-        </aside>
+        {detalle && !detalle.vacia ? (
+          <Detalle d={detalle} cerrar={enlace?.(null)} />
+        ) : (
+          <PorMes porMes={porMes} ultimoCerrado={ultimoCerrado} />
+        )}
       </div>
     </section>
+  );
+}
+
+/** El movimiento del mes, callado cuando los números son demasiado chicos. */
+function Movimiento({ ahora, antes }: { ahora: number; antes: number }) {
+  // Tres activos contra dos es "+50%" y es una persona. Con la cola de
+  // empresas de uno o dos pacientes, mostrar ese número sería llenar la tabla
+  // de flechas de colores que no significan nada.
+  if (Math.max(ahora, antes) < 5 || antes === 0) {
+    return <span className="w-20 text-right tabular-nums text-ter">—</span>;
+  }
+
+  const delta = ahora / antes - 1;
+  const tono =
+    delta < -0.1 ? "text-coral" : delta > 0.1 ? "text-green" : "text-sec";
+  const flecha = delta > 0 ? "↑ +" : "↓ −";
+
+  return (
+    <span className={`w-20 text-right tabular-nums ${tono}`}>
+      {Math.abs(delta) < 0.005
+        ? "igual"
+        : `${flecha}${Math.abs(delta * 100).toFixed(0)}%`}
+    </span>
+  );
+}
+
+/** La serie en miniatura: una barrita por mes, el mes en curso apagado. */
+function Chispa({
+  valores,
+  enCurso,
+  color,
+}: {
+  valores: number[];
+  enCurso: boolean[];
+  color: string;
+}) {
+  const max = Math.max(...valores, 1);
+  return (
+    <span className="flex h-5 items-end gap-[2px]">
+      {valores.map((v, i) => (
+        <span
+          key={i}
+          className={`flex-1 rounded-[1px] ${enCurso[i] ? "bg-dim" : color}`}
+          style={{ height: `${Math.max((v / max) * 100, v > 0 ? 8 : 2)}%` }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** El panel de siempre, cuando no hay ninguna empresa abierta. */
+function PorMes({
+  porMes,
+  ultimoCerrado,
+}: {
+  porMes: VistaBusiness["porMes"];
+  ultimoCerrado?: { mes: string; empresas: number };
+}) {
+  const maximo = Math.max(...porMes.map((m) => m.empresas), 1);
+
+  return (
+    <aside className="rounded-lg border border-borde bg-surface px-4 py-3 lg:w-[380px] lg:shrink-0">
+      <p className="text-xs uppercase tracking-wide text-ter">
+        Cuántas empresas por mes
+      </p>
+      <p className="mt-0.5 text-xl text-texto">
+        {ultimoCerrado
+          ? `${ultimoCerrado.empresas} en ${mesCorto(ultimoCerrado.mes)}`
+          : "—"}
+      </p>
+
+      <div className="mt-3">
+        {porMes.map((m) => (
+          <div
+            key={m.mes}
+            className="flex items-center gap-3 border-t border-borde py-1 text-xs"
+          >
+            <span className="w-14 shrink-0 text-sec">
+              {mesCorto(m.mes)}
+              {m.enCurso ? " ·" : ""}
+            </span>
+            <div className="h-1.5 flex-1 rounded-sm bg-surface-2">
+              <div
+                className={`h-1.5 rounded-sm ${m.enCurso ? "bg-dim" : "bg-orange"}`}
+                style={{ width: `${(m.empresas / maximo) * 100}%` }}
+              />
+            </div>
+            <span className="w-6 shrink-0 text-right tabular-nums text-texto">
+              {m.empresas}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <p className="mt-2 text-xs text-ter">
+        Una empresa cuenta en un mes si tuvo algún paciente ese mes. El último
+        lleva punto porque todavía no cerró.
+      </p>
+    </aside>
+  );
+}
+
+/** El detalle de la empresa elegida. */
+function Detalle({ d, cerrar }: { d: DetalleEmpresa; cerrar?: string }) {
+  const i = d.mes === null ? -1 : d.meses.findIndex((m) => m.mes === d.mes);
+  const ahora = i >= 0 ? d.activos[i]! : 0;
+  const antes = i >= 1 ? d.activos[i - 1]! : 0;
+  const juicio = veredicto(d);
+  const enCurso = d.meses.map((m) => m.enCurso);
+  const max = Math.max(...d.activos, 1);
+
+  const trimestre = (v: number[], fin: number) =>
+    fin >= 2 ? v[fin]! + v[fin - 1]! + v[fin - 2]! : 0;
+  const ult3 = trimestre(d.activos, i);
+  const prev3 = trimestre(d.activos, i - 3);
+
+  const borde =
+    juicio?.tono === "mal"
+      ? "border-coral"
+      : juicio?.tono === "bien"
+        ? "border-green"
+        : "border-dim";
+
+  return (
+    <aside className="rounded-lg border border-borde bg-surface px-4 py-3 lg:w-[460px] lg:shrink-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="min-w-0 truncate text-base text-texto">{d.empresa}</p>
+        <p className="shrink-0 text-xs text-ter">
+          {d.plataformas.join(" + ") || "—"}
+          {d.tipos.length > 0 ? ` · ${d.tipos.join(" + ")}` : ""}
+          {cerrar ? (
+            <>
+              {" · "}
+              <Link href={cerrar} className="text-sec hover:text-texto" scroll={false}>
+                cerrar
+              </Link>
+            </>
+          ) : null}
+        </p>
+      </div>
+
+      <p className="mt-3 text-xs uppercase tracking-wide text-ter">
+        Pacientes activos{d.mes ? ` · ${mesCorto(d.mes)}` : ""}
+      </p>
+      <p className="mt-0.5 flex items-baseline gap-2">
+        <span className="text-3xl text-texto">{entero(ahora)}</span>
+        <Movimiento ahora={ahora} antes={antes} />
+        {antes > 0 ? (
+          <span className="text-xs text-ter">
+            {entero(antes)} en {d.mesPrevio ? mesCorto(d.mesPrevio) : "—"}
+          </span>
+        ) : null}
+      </p>
+
+      {/* El veredicto en palabras: un porcentaje solo no distingue un mes
+          flojo de una cuenta perdida. */}
+      {juicio ? (
+        <p className={`mt-2 border-l-2 ${borde} bg-surface-2 px-3 py-2 text-sm text-texto`}>
+          <strong>{juicio.titulo}</strong> {juicio.texto}
+        </p>
+      ) : null}
+
+      <div className="mt-4">
+        <p className="text-xs uppercase tracking-wide text-ter">
+          Activos por mes
+        </p>
+        <div className="mt-2 flex h-20 items-end gap-[3px]">
+          {d.activos.map((v, k) => (
+            <div
+              key={d.meses[k]!.mes}
+              className={`flex-1 rounded-sm ${enCurso[k] ? "bg-dim" : "bg-orange"}`}
+              style={{ height: `${Math.max((v / max) * 100, v > 0 ? 4 : 1)}%` }}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex gap-[3px] text-[9px] text-ter">
+          {d.meses.map((m, k) => (
+            <span key={m.mes} className="flex-1 text-center">
+              {k % 2 === 0 ? mesCorto(m.mes).slice(0, 3) : ""}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3">
+        <Metrica
+          nombre="Pacientes nuevos"
+          valor={entero(i >= 0 ? d.nuevos[i]! : 0)}
+          pie={i >= 1 ? `${entero(d.nuevos[i - 1]!)} el mes anterior` : "—"}
+          serie={d.nuevos}
+          enCurso={enCurso}
+        />
+        <Metrica
+          nombre="Sesiones"
+          valor={entero(i >= 0 ? d.sesiones[i]! : 0)}
+          pie={i >= 1 ? `${entero(d.sesiones[i - 1]!)} el mes anterior` : "—"}
+          serie={d.sesiones}
+          enCurso={enCurso}
+        />
+        <Metrica
+          nombre="Ingreso del mes"
+          valor={i >= 0 && d.ingreso[i]! > 0 ? usd(d.ingreso[i]!, 0) : "—"}
+          pie="con IVA, al cambio del mes"
+          serie={d.ingreso}
+          enCurso={enCurso}
+        />
+        <Metrica
+          nombre="Últimos 3 meses"
+          valor={entero(ult3)}
+          pie={
+            prev3 > 0
+              ? `${entero(prev3)} los 3 previos · ${porcentaje(ult3 / prev3 - 1, 0)}`
+              : "sin trimestre previo"
+          }
+          serie={d.activos}
+          enCurso={enCurso}
+        />
+      </div>
+
+      <p className="mt-4 border-t border-borde pt-2 text-xs text-ter">
+        Aparece en {d.mesesVivos} de los {d.meses.length} meses del rango
+        {d.pico
+          ? ` · máximo ${entero(d.pico.valor)} activos en ${mesCorto(d.pico.mes)}`
+          : ""}
+        . El rango lo decide el selector de arriba.
+      </p>
+    </aside>
+  );
+}
+
+function Metrica({
+  nombre,
+  valor,
+  pie,
+  serie,
+  enCurso,
+}: {
+  nombre: string;
+  valor: string;
+  pie: string;
+  serie: number[];
+  enCurso: boolean[];
+}) {
+  return (
+    <div>
+      <p className="text-[11px] text-ter">{nombre}</p>
+      <p className="mt-0.5 flex items-baseline gap-2">
+        <span className="text-lg text-texto">{valor}</span>
+        <Chispa valores={serie} enCurso={enCurso} color="bg-teal" />
+      </p>
+      <p className="text-[11px] text-sec">{pie}</p>
+    </div>
   );
 }
 

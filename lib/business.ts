@@ -36,6 +36,18 @@ export type FilaEmpresa = {
   meses: number;
   /** El último mes del rango en el que tuvo algún paciente. */
   ultimo: string;
+  /**
+   * Los activos de cada mes del rango, en el orden de `meses`, para la serie
+   * en miniatura de la tabla.
+   *
+   * Va en la tabla y no solo en el detalle a propósito: son casi sesenta
+   * empresas, y si la tendencia viviera únicamente adentro del panel habría
+   * que abrirlas una por una para encontrar la que se está yendo.
+   */
+  serie: number[];
+  /** Activos del último mes cerrado y del anterior, para el movimiento. */
+  ahora: number;
+  antes: number;
 };
 
 export type VistaBusiness = {
@@ -194,7 +206,7 @@ export function armar(
         valor: Number(f.activos),
       })),
     ),
-    empresas: armarEmpresas(deEmpresas),
+    empresas: armarEmpresas(deEmpresas, meses, mes, mesPrevio),
     porMes: meses.map((m) => ({
       mes: m,
       empresas: new Set(
@@ -294,8 +306,16 @@ function serie(
  * `nuevos` cuando hay, y el número de activos va al lado como volumen, no como
  * gente distinta.
  */
-function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
+function armarEmpresas(
+  filas: Fila[],
+  meses: string[],
+  mes: string | null,
+  mesPrevio: string | null,
+): FilaEmpresa[] {
   const por = new Map<string, FilaEmpresa>();
+  // Los activos de cada empresa en cada mes. Una empresa tiene una fila por
+  // plataforma, así que se suman: en TOTAL la serie es la de las dos juntas.
+  const serie = new Map<string, Map<string, number>>();
 
   for (const f of filas) {
     const nuevos = Number(f.nuevos);
@@ -304,12 +324,32 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
 
     let e = por.get(f.empresa);
     if (!e) {
-      e = { empresa: f.empresa, nuevos: 0, activos: 0, meses: 0, ultimo: f.mes };
+      e = {
+        empresa: f.empresa,
+        nuevos: 0,
+        activos: 0,
+        meses: 0,
+        ultimo: f.mes,
+        serie: [],
+        ahora: 0,
+        antes: 0,
+      };
       por.set(f.empresa, e);
+      serie.set(f.empresa, new Map());
     }
     e.nuevos += nuevos;
     e.activos += activos;
     if (f.mes > e.ultimo) e.ultimo = f.mes;
+
+    const porMes = serie.get(f.empresa)!;
+    porMes.set(f.mes, (porMes.get(f.mes) ?? 0) + activos);
+  }
+
+  for (const e of por.values()) {
+    const porMes = serie.get(e.empresa)!;
+    e.serie = meses.map((m) => porMes.get(m) ?? 0);
+    e.ahora = mes === null ? 0 : (porMes.get(mes) ?? 0);
+    e.antes = mesPrevio === null ? 0 : (porMes.get(mesPrevio) ?? 0);
   }
 
   // Los meses se cuentan aparte: una empresa tiene una fila por plataforma, y
