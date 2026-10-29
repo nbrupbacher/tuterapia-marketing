@@ -1,8 +1,8 @@
 # Empresas · mapeo de cupones
 
-Borrador para revisar con el dueño del producto. Todavía **no** es una tabla ni
-una migración: es la lista de lo que los cupones dicen que son, para que
-alguien que sabe la confirme.
+La lista de lo que los cupones dicen que son, **confirmada por el dueño del
+producto el 2026-10-29**. Vive en código en `lib/empresas.ts`, que es lo que
+la pestaña usa; este documento es el porqué.
 
 Fecha de la lectura: **2026-10-29**, sobre los 831 cupones que alguna vez se
 usaron.
@@ -52,7 +52,13 @@ dos veces. Sirve para ordenar, no para publicar.
 |---|---|---|---|---|
 | Farmashop | `#bienestarfarma25` + familia "Líderes Farmashop" (uno por persona) | ~26 | ~350 | UY |
 | TCS | `#BienestarTCS`, `#continuarTT` | 2 | 252 | UY |
-| VESTA | `VestaGXC`, `VestaNDM`, `VestaDL`, `VestaUW`, `VestaHUB`, `VestaGS`, `VestaGLA` | 8 | ~98 | UY |
+| GXC Consulting (Vesta) | `VestaGXC` | 1 | 32 | UY |
+| Nodum (Vesta) | `VestaNDM` | 2 | 30 | UY |
+| Datalogic (Vesta) | `VestaDL` | 1 | 10 | UY |
+| Uruware (Vesta) | `VestaUW` | 1 | 9 | UY |
+| VSGLATAM (Vesta) | `VestaHUB` | 1 | 9 | UY |
+| Gsoft (Vesta) | `VestaGS` | 1 | 4 | UY |
+| Greycon (Vesta) | `VestaGLA` | 1 | 4 | UY |
 | UTEC | `#alianzautec0723` | 1 | 93 | UY |
 | Fosmetal | `#FOSMETAL25` + familia por persona | ~60 | ~89 | UY |
 | December Labs | `#wellnessDL` | 2 | 67 | UY + AR |
@@ -105,9 +111,13 @@ dos veces. Sirve para ordenar, no para publicar.
 | Audaca | `#bienestaraudaca` | 1 | 2 | UY |
 | Bonprole | `#bonprole` | 1 | 1 | UY |
 | HSBC | `#bienestarhsbc` | 1 | 1 | UY |
+| Pase Libre | `#paselibre` | 1 | 4 | UY |
 
-Son **56 empresas** y alrededor de **1.600 usos**, no los 5.690 que contaba la
+Son **61 empresas** y alrededor de **1.600 usos**, no los 5.690 que contaba la
 regla anterior.
+
+Vesta no es un cliente: es el grupo que tiene a las otras siete. Van con su
+propio nombre y Vesta al costado.
 
 ## Los `#` que NO son empresa
 
@@ -117,7 +127,6 @@ regla anterior.
 | `#promocomunidad` | campaña "Pos-suba" de 2023 | 126 |
 | `#Miprimerasesión`, `#Primerasesion` | campaña de primera sesión | 69 |
 | `#BeneficioTuTerapia`, `#BienestarTuTerapia` | campaña propia | 64 |
-| `#paselibre` | producto "Pase Libre (On Demand)" | 4 |
 | `#TallerPosadas` | evento de concientización | 2 |
 | `#uruguayosenusa2023` | acuerdo con una comunidad, no una empresa | 1 |
 | `#practicante` | práctica profesional | 1 |
@@ -126,27 +135,40 @@ regla anterior.
 
 ---
 
-## Lo que falta decidir
+## Lo que se decidió el 2026-10-29
 
-1. **VESTA**: ¿es un cliente o un intermediario? Los siete cupones nombran
-   empresas distintas (GXC, Nodum, Datalogic, Uruware, VSGLATAM, Gsoft,
-   Greycon). Si es un canal, la pestaña debería mostrar las siete por separado
-   y no "VESTA".
+1. **Vesta es el grupo**, no el cliente: las siete van por su propio nombre,
+   con Vesta aclarado al costado.
 2. **Los cupones por persona** (Fosmetal, Farmashop, ISA, Movigroup,
-   Securitas): ¿cuentan dentro de su empresa? Doy por sí, pero decilo vos.
-3. **Kinko, Big Cheese, AXO, Arcsona, Applevel** tienen un cupón "particular"
-   además del de la empresa. ¿Es la misma empresa o es alguien que siguió por
-   su cuenta después de que la empresa dejó de pagar? Cambia qué significa
-   dar de baja a una empresa.
-4. **`#paselibre` y `#practicante`**: ¿son producto o empresa?
-5. **Las campañas** que la regla vieja mandaba a business (Black Friday, cyber,
-   cumpleaños, los mensuales de ads) — ¿van a una tercera categoría
-   "promocional" o quedan afuera de la pestaña?
+   Securitas) suman a su empresa.
+3. **Los cupones "particular"** (Kinko, Big Cheese, AXO, Arcsona, Applevel,
+   Orangeloops, Nodum) son la misma empresa.
+4. **`#paselibre` es empresa**; **`#practicante` no**.
+5. **Las campañas no son empresa**: Black Friday, cyber, cumpleaños, carnaval,
+   los cupones mensuales de ads y los de primera sesión quedan afuera de la
+   pestaña.
+
+## Lo que sigue abierto
+
+Nada del mapeo. Lo que falta es de la pestaña, no de las empresas: **qué es un
+paciente activo de empresa**. "Alguna vez usó un cupón de empresa" y "compró
+con un cupón de empresa en el mes" son dos preguntas distintas y dan números
+que difieren al doble.
 
 ## Cómo se mantiene
 
 Las empresas nuevas aparecen solas: alguien crea `#bienestarXXX` y nadie avisa.
-Propuesta: una tabla `marketing.cupon_empresa` (id de cupón → empresa), igual
-que `marketing.utm_mapping`, y un aviso en la pestaña con los cupones que
-empiezan con `#` y todavía no tienen empresa asignada. Así un cupón nuevo se ve
-como "sin mapear" en vez de desaparecer de los números.
+
+El mapeo vive en **`lib/empresas.ts`**, como una lista ordenada de patrones
+—gana el primero que matchea— que se traduce a un `CASE` y se manda a MySQL.
+Que la traducción pase **adentro** de MySQL es a propósito: así `cupones.nombre`
+se compara allá y lo único que vuelve es el nombre de la empresa. El nombre del
+cupón, que en varias familias es el de un paciente, no sale de la base.
+
+El orden resuelve dos choques reales: Fosmetal va antes que ISA, porque un
+apellido con "isa" adentro caía en ISA; y Fraylog antes que Pase Libre, porque
+su cupón se llama "Fraylog (Pase Libre)".
+
+Para que un cupón nuevo no desaparezca de los números, la sonda
+`empresas_sin_mapear` lista los que empiezan con `#` y no cayeron en ninguna
+empresa. Hoy ahí tienen que quedar solo las campañas y `#practicante`.

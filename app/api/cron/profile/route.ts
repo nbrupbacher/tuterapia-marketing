@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2";
 import { withMysql } from "@/lib/mysql";
 import { isCronAuthorized } from "@/lib/auth";
+import { sqlEmpresa } from "@/lib/empresas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -717,6 +718,93 @@ const PROBES: Record<string, string> = {
      WHERE c.codigo LIKE '#%' OR LOWER(c.codigo) LIKE 'vesta%'
      GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
      ORDER BY pacientes DESC LIMIT 200`,
+
+  // Con el mapeo de empresas puesto: cuánto agarra y qué queda suelto.
+  //
+  // `sqlEmpresa()` traduce cupón a empresa DENTRO de MySQL, así que de acá sale
+  // el nombre de la empresa y nunca el del cupón —que en Fosmetal, Farmashop,
+  // ISA, Movigroup y Securitas es el de un paciente.
+  empresas_total: `
+    SELECT ${sqlEmpresa()} AS empresa,
+           COUNT(DISTINCT c.id) AS cupones,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     GROUP BY 1
+    HAVING empresa <> ''
+     ORDER BY pacientes DESC`,
+
+  // Los cupones que empiezan con '#' y NO cayeron en ninguna empresa. Acá
+  // tienen que quedar solo las campañas (#promocomunidad, #Miprimerasesión,
+  // #BeneficioTuTerapia, #fcyo:)) y #practicante, que el dueño del producto
+  // dijo que no es empresa. Cualquier otra cosa es un agujero del mapeo.
+  //
+  // Devuelve el CÓDIGO, no el nombre: un código suelto es opaco, un nombre
+  // suelto puede ser el de alguien.
+  empresas_sin_mapear: `
+    SELECT c.codigo, c.pais, COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE c.codigo LIKE '#%' AND ${sqlEmpresa()} = ''
+     GROUP BY c.id, c.codigo, c.pais
+     ORDER BY pacientes DESC LIMIT 40`,
+
+  // Y la serie de verdad, ya con empresas: pacientes nuevos y activos por mes.
+  // Las dos lecturas de "nuevo" siguen al lado porque esa decisión no se tomó.
+  empresas_nuevos_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT pp.id_paciente) AS nuevos_total,
+           COUNT(DISTINCT CASE WHEN bp.id_pago IS NOT NULL
+                               THEN pp.id_paciente END) AS nuevos_primer_pago,
+           COUNT(DISTINCT CASE WHEN bv.id_paciente IS NOT NULL
+                               THEN pp.id_paciente END) AS nuevos_alguna_vez
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      LEFT JOIN (SELECT DISTINCT pc.id_pago FROM pacientes_cupones pc
+                   JOIN cupones c ON c.id = pc.id_cupon
+                  WHERE ${sqlEmpresa()} <> '' AND pc.id_pago IS NOT NULL) bp
+        ON bp.id_pago = pp.id
+      LEFT JOIN (SELECT DISTINCT pc.id_paciente FROM pacientes_cupones pc
+                   JOIN cupones c ON c.id = pc.id_cupon
+                  WHERE ${sqlEmpresa()} <> '') bv
+        ON bv.id_paciente = pp.id_paciente
+     WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+       AND pp.creacion >= '2025-09-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  empresas_activos_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(s.fecha, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT s.id_paciente) AS activos_total,
+           COUNT(DISTINCT CASE WHEN bv.id_paciente IS NOT NULL
+                               THEN s.id_paciente END) AS activos_empresa
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+      LEFT JOIN (SELECT DISTINCT pc.id_paciente FROM pacientes_cupones pc
+                   JOIN cupones c ON c.id = pc.id_cupon
+                  WHERE ${sqlEmpresa()} <> '') bv
+        ON bv.id_paciente = s.id_paciente
+     WHERE s.realizada = 1 AND l.paisDominio IN ('AR','UY')
+       AND s.fecha >= '2025-09-01'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Y la tercera lectura, la que no depende del pasado: usó un cupón de
+  // empresa EN el mes.
+  empresas_compraron_por_mes: `
+    SELECT DATE_FORMAT(pc.fecha, '%Y-%m') AS mes,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           COUNT(DISTINCT ${sqlEmpresa()}) AS empresas
+      FROM pacientes_cupones pc
+      JOIN cupones c ON c.id = pc.id_cupon
+     WHERE ${sqlEmpresa()} <> '' AND pc.fecha >= '2025-09-01'
+     GROUP BY 1 ORDER BY 1`,
 
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
