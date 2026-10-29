@@ -148,6 +148,26 @@ propio nombre y Vesta al costado.
    los cupones mensuales de ads y los de primera sesión quedan afuera de la
    pestaña.
 
+## Para la reunión con Business
+
+Cupones que tienen pinta de empresa y nadie supo decir de quién son. Quedan
+fuera de los números hasta que alguien los nombre. Ninguno mueve la serie —uno
+o dos pacientes cada uno— pero una empresa que el mapeo no ve es una empresa
+que no existe para el tablero.
+
+| Cupones | Pacientes | Último uso | Por qué parece empresa |
+|---|---|---|---|
+| `#BienestarMN`, `#BienestarMN2` | 2 | 2025-10 | dos cupones con el prefijo `#Bienestar`, igual que el resto |
+| `#AlianzaRB`, `#primeraRB`, `#BeneficioRB` | 3 | 2026-10 | tres cupones y las tres familias (`#Alianza`, `#primera`, `#Beneficio`) |
+| `#Invierta0264`, `#Invierta0246` | 2 | 2025-12 | nombre + número, el patrón de un cupón por persona |
+| `#alianzaGA` | 1 | 2026-03 | familia `#alianza` |
+| `#N2PMO` | 1 | 2026-10 | — |
+| `#pinot` | 1 | 2026-07 | — |
+
+Descartados a propósito, salvo que en la reunión digan lo contrario:
+`#meta2023` (parece campaña de ads) y `#boron` (va con el promocional
+`terapiaboron`).
+
 ## Lo que sigue abierto
 
 Nada del mapeo. Lo que falta es de la pestaña, no de las empresas: **qué es un
