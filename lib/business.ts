@@ -1,5 +1,6 @@
 import { withDb } from "@/lib/db";
 import { type Rango } from "@/lib/dashboard";
+import type { Desglose } from "@/lib/desglose";
 
 /**
  * La pestaña Business: los pacientes que llegan con el cupón de una empresa.
@@ -55,8 +56,12 @@ export type VistaBusiness = {
   };
   /** Pacientes nuevos de empresa y del total, para la parte que representan. */
   parte: { empresa: number; total: number; mes: string | null };
+  /** Los últimos 45 días, para el gráfico de abajo. Solo nuevos. */
+  diario: Desglose;
   vacia: boolean;
 };
+
+type FilaDia = { dia: string; pais: string; empresa: string; nuevos: string };
 
 type Fila = {
   mes: string;
@@ -71,7 +76,7 @@ export async function leerBusiness(
   meses: Rango,
 ): Promise<VistaBusiness> {
   return withDb(async (db) => {
-    const [mensual, totales] = await Promise.all([
+    const [mensual, totales, diario] = await Promise.all([
       db.query<Fila>(
         `select to_char(mes, 'YYYY-MM') as mes, pais, empresa,
                 nuevos::text, activos::text
@@ -92,9 +97,14 @@ export async function leerBusiness(
           order by mes desc limit $1`,
         [meses],
       ),
+      db.query<FilaDia>(
+        `select to_char(fecha, 'YYYY-MM-DD') as dia, pais, empresa, nuevos::text
+           from marketing.business_diario
+          order by fecha`,
+      ),
     ]);
 
-    return armar(mensual.rows, totales.rows, pais);
+    return armar(mensual.rows, totales.rows, pais, diario.rows);
   });
 }
 
@@ -111,6 +121,7 @@ export function armar(
   todas: Fila[],
   totales: { mes: string; pacientes_nuevos: string | null }[],
   pais = "TOTAL",
+  dias: FilaDia[] = [],
 ): VistaBusiness {
   const esTotal = pais === "TOTAL";
   const filas = esTotal ? todas : todas.filter((f) => f.pais === pais);
@@ -182,6 +193,7 @@ export function armar(
       mes,
       mesPrevio,
     },
+    diario: armarDiario(dias, esTotal, pais),
     parte: {
       empresa: empresaDelMes,
       total:
@@ -296,4 +308,45 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
   return [...por.values()].sort(
     (a, b) => b.activos - a.activos || b.nuevos - a.nuevos,
   );
+}
+
+/**
+ * Los últimos días, en la forma que espera `GraficoDiario`.
+ *
+ * Se parte igual que la barra mensual —por plataforma en TOTAL, por empresa
+ * dentro de una plataforma— para que las dos lean lo mismo. Un gráfico arriba
+ * partido por empresa y el de abajo por plataforma obligaría a recalibrar el
+ * ojo entre uno y otro.
+ *
+ * `utm` va vacío: el tooltip por fuente es de General, donde la pregunta es de
+ * qué campaña vino cada día. Acá la pregunta es de qué empresa, y eso ya está
+ * en la franja.
+ */
+function armarDiario(
+  dias: FilaDia[],
+  esTotal: boolean,
+  pais: string,
+): Desglose {
+  const filas = esTotal ? dias : dias.filter((f) => f.pais === pais);
+  const deInteres = esTotal
+    ? filas.filter((f) => f.empresa === TODAS)
+    : filas.filter((f) => f.empresa !== TODAS);
+
+  const total = new Map<string, number>();
+  const barras = deInteres
+    .map((f) => {
+      const clave = esTotal ? f.pais : f.empresa;
+      const valor = Number(f.nuevos);
+      total.set(clave, (total.get(clave) ?? 0) + valor);
+      return { periodo: f.dia, clave, valor };
+    })
+    .filter((p) => p.valor > 0);
+
+  // Por volumen descendente: el apilado no se reordena entre renders y la
+  // empresa grande se lleva el color fuerte.
+  const claves = [...total.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
+
+  return { barras, plataformas: esTotal ? claves.sort() : claves, utm: [] };
 }

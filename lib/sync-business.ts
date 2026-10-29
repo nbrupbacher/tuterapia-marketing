@@ -1,7 +1,12 @@
 import type { Connection } from "mysql2/promise";
 import type { Client } from "pg";
 import { monthRangeUtc } from "@/lib/queries/shared";
-import { nuevosDeEmpresa, activosDeEmpresa } from "@/lib/queries/business";
+import { ultimosDias } from "@/lib/queries/diarias";
+import {
+  nuevosDeEmpresa,
+  activosDeEmpresa,
+  nuevosDeEmpresaPorDia,
+} from "@/lib/queries/business";
 import { transaction } from "@/lib/db";
 
 /**
@@ -31,6 +36,15 @@ import { transaction } from "@/lib/db";
  */
 export const MESES_DE_BUSINESS = 13;
 
+/**
+ * Y cuántos días el grano diario.
+ *
+ * Cuarenta y cinco, los mismos que Movimientos en General, para que las dos
+ * pestañas muestren la misma ventana y no haya que recalibrar el ojo al pasar
+ * de una a la otra.
+ */
+export const DIAS_DE_BUSINESS = 45;
+
 export async function sincronizarBusiness(
   mysql: Connection,
   db: Client,
@@ -44,9 +58,10 @@ export async function sincronizarBusiness(
     end: monthRangeUtc(hasta).end,
   };
 
-  const [nuevos, activos] = await Promise.all([
+  const [nuevos, activos, diarias] = await Promise.all([
     nuevosDeEmpresa(mysql, rango),
     activosDeEmpresa(mysql, rango),
+    nuevosDeEmpresaPorDia(mysql, ultimosDias(DIAS_DE_BUSINESS, ahora)),
   ]);
 
   // Las dos series se cruzan en una fila por (mes, plataforma, empresa): una
@@ -80,9 +95,29 @@ export async function sincronizarBusiness(
         [`${mes}-01`, pais, empresa, v.nuevos, v.activos],
       );
     }
+
+    // El diario, con el mismo criterio: se borra y se reescribe la ventana.
+    await db.query(
+      `delete from marketing.business_diario where fecha >= $1::date`,
+      [desdeDia(ahora)],
+    );
+    for (const f of diarias) {
+      await db.query(
+        `insert into marketing.business_diario (fecha, pais, empresa, nuevos)
+         values ($1, $2, $3, $4)`,
+        [f.dia, f.pais, f.empresa, f.n],
+      );
+    }
   });
 
-  return filas.size;
+  return filas.size + diarias.length;
+}
+
+/** El primer día de la ventana diaria, en día local (UTC−3). */
+function desdeDia(ahora: Date): string {
+  const d = new Date(ahora.getTime() - 3 * 3_600_000);
+  d.setUTCDate(d.getUTCDate() - (DIAS_DE_BUSINESS - 1));
+  return d.toISOString().slice(0, 10);
 }
 
 /** 'YYYY-MM' del mes en curso, en día local (UTC−3). */

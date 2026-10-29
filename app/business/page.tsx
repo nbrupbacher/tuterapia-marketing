@@ -1,5 +1,6 @@
 import { Nav, Selectores, contexto } from "@/components/nav";
 import { GraficoSerie, type Serie } from "@/components/grafico-serie";
+import { GraficoDiario } from "@/components/grafico-diario";
 import { identidadDe } from "@/components/identidad";
 import {
   leerBusiness,
@@ -108,6 +109,8 @@ export function PantallaBusiness({
         recorte={esTotal ? undefined : SIN_AGRUPAR}
       />
 
+      <Diario vista={vista} esTotal={esTotal} pais={pais} />
+
       <Bloque
         titulo="Pacientes activos de empresa · por plataforma"
         series={aSeries(vista.activos, true)}
@@ -213,6 +216,46 @@ function Bloque({
         recortePanel={recorte}
       />
       <p className="mt-3 text-sm text-sec">{pie}</p>
+    </section>
+  );
+}
+
+/**
+ * Los últimos 45 días, debajo de la mensual.
+ *
+ * La misma ventana que Movimientos en General, para que las dos pestañas se
+ * lean una contra otra sin recalibrar el ojo.
+ *
+ * Solo pacientes nuevos. Los activos no tienen versión diaria que signifique
+ * algo: su definición es "sesión en el mes, de alguien que ya tenía cupón al
+ * cierre del mes", y un día no tiene cierre de mes.
+ */
+function Diario({
+  vista,
+  esTotal,
+  pais,
+}: {
+  vista: VistaBusiness;
+  esTotal: boolean;
+  pais: string;
+}) {
+  return (
+    <section className="mt-8">
+      <h2 className="text-xs uppercase tracking-wide text-ter">
+        Pacientes nuevos de empresa ·{" "}
+        {esTotal ? "por plataforma" : `plataforma ${pais}, por empresa`} · 45
+        días
+      </h2>
+      <GraficoDiario
+        datos={vista.diario}
+        rate={false}
+        titulo="Pacientes nuevos de empresa"
+      />
+      <p className="mt-3 text-sm text-sec">
+        El mismo número que la barra mensual de arriba, día por día. Son pocos
+        por día —entre cero y unos pocos—, así que lo que se lee es el ritmo y
+        los huecos, no la altura de un día suelto.
+      </p>
     </section>
   );
 }

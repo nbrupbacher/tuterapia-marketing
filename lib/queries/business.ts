@@ -25,6 +25,11 @@ import { sqlEmpresa } from "@/lib/empresas";
 /** La etiqueta de la fila con el total del mes, ya deduplicado. */
 export const TODAS = "TODAS";
 
+/** El día local (UTC−3) de una columna de fecha. */
+function diaLocal(columna: string): string {
+  return `DATE(DATE_SUB(${columna}, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR))`;
+}
+
 /** El mes local (UTC−3) de una columna de fecha, como el resto del tablero. */
 function mesLocal(columna: string): string {
   return `DATE_FORMAT(DATE_SUB(${columna}, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR), '%Y-%m')`;
@@ -194,4 +199,79 @@ function normalizar<T extends { mes: string; pais: string; n: number }>(
     empresa: (fila as { empresa?: string }).empresa ?? TODAS,
     n: Number(fila.n),
   };
+}
+
+export type FilaDiaria = {
+  dia: string;
+  pais: string;
+  empresa: string;
+  n: number;
+};
+
+/**
+ * Los mismos pacientes nuevos de empresa, pero por día.
+ *
+ * Solo nuevos. Los activos no tienen versión diaria que signifique algo: la
+ * definición es "sesión en el mes, de alguien que ya tenía cupón al cierre del
+ * mes", y un día no tiene cierre de mes.
+ *
+ * El día es el LOCAL (UTC−3), como en Movimientos: con días UTC la noche de un
+ * día cae en el siguiente y el patrón de fin de semana se emborrona.
+ */
+export async function nuevosDeEmpresaPorDia(
+  conn: Connection,
+  rango: Rango,
+): Promise<FilaDiaria[]> {
+  const [porEmpresa] = await conn.query<
+    (RowDataPacket & { dia: string; pais: string; empresa: string; n: number })[]
+  >(
+    `SELECT ${diaLocal("pp.creacion")} AS dia,
+            l.paisDominio AS pais, pe.empresa,
+            COUNT(DISTINCT pp.id_paciente) AS n
+       FROM pacientes_pagos pp
+       JOIN (${PRIMER_PAGO}) f
+         ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+       JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+       JOIN (${PAGO_EMPRESA}) pe ON pe.id_pago = pp.id
+      WHERE pp.confirmado = 1
+        AND l.paisDominio IN ('AR', 'UY')
+        AND pp.creacion >= ? AND pp.creacion < ?
+      GROUP BY 1, 2, 3`,
+    [rango.start, rango.end],
+  );
+
+  const [totales] = await conn.query<
+    (RowDataPacket & { dia: string; pais: string; n: number })[]
+  >(
+    `SELECT ${diaLocal("pp.creacion")} AS dia,
+            l.paisDominio AS pais,
+            COUNT(DISTINCT pp.id_paciente) AS n
+       FROM pacientes_pagos pp
+       JOIN (${PRIMER_PAGO}) f
+         ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+       JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      WHERE pp.confirmado = 1
+        AND l.paisDominio IN ('AR', 'UY')
+        AND pp.creacion >= ? AND pp.creacion < ?
+        AND pp.id IN (SELECT id_pago FROM (${PAGO_EMPRESA}) x)
+      GROUP BY 1, 2`,
+    [rango.start, rango.end],
+  );
+
+  const dia = (r: { dia: unknown }) => String(r.dia).slice(0, 10);
+
+  return [
+    ...porEmpresa.map((r) => ({
+      dia: dia(r),
+      pais: r.pais,
+      empresa: r.empresa,
+      n: Number(r.n),
+    })),
+    ...totales.map((r) => ({
+      dia: dia(r),
+      pais: r.pais,
+      empresa: TODAS,
+      n: Number(r.n),
+    })),
+  ];
 }

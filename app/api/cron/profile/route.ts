@@ -856,6 +856,98 @@ const PROBES: Record<string, string> = {
             HAVING empresa <> '') e
      GROUP BY 1 ORDER BY 1`,
 
+  // ¿`pacientes_cupones.id_pago` apunta de verdad a `pacientes_pagos.id`?
+  //
+  // Toda la definición de "paciente nuevo de empresa" cuelga de eso: el cupón
+  // tiene que estar en el pago con el que entró. Los nombres coinciden y los
+  // tipos también, pero eso no prueba nada — la prueba es que el PACIENTE del
+  // pago sea el mismo que el del cupón. Si fuera otro espacio de ids, serían
+  // distintos casi siempre.
+  cupon_pago_integridad: `
+    SELECT COUNT(*) AS filas_con_id_pago,
+           SUM(pp.id IS NULL) AS pago_inexistente,
+           SUM(pp.id IS NOT NULL AND pp.id_paciente = pc.id_paciente) AS mismo_paciente,
+           SUM(pp.id IS NOT NULL AND pp.id_paciente <> pc.id_paciente) AS otro_paciente,
+           SUM(pp.id IS NOT NULL
+               AND ABS(DATEDIFF(pc.fecha, DATE(pp.creacion))) <= 1) AS misma_fecha,
+           SUM(pp.id IS NOT NULL
+               AND ABS(DATEDIFF(pc.fecha, DATE(pp.creacion))) > 1) AS fecha_lejos
+      FROM pacientes_cupones pc
+      LEFT JOIN pacientes_pagos pp ON pp.id = pc.id_pago
+     WHERE pc.id_pago IS NOT NULL AND pc.id_pago > 0`,
+
+  // Y el control de la cuenta misma, sobre septiembre de 2026.
+  //
+  // Son cuatro números que tienen que cerrar entre sí:
+  //   nuevos_del_mes      — primer pago confirmado en el mes (como General)
+  //   con_cupon_empresa   — de esos, los que entraron con cupón de empresa
+  //   cupon_pero_no_nuevo — usaron cupón de empresa en un pago de septiembre
+  //                         que NO era el primero. Tienen que quedar afuera.
+  //   primer_pago_previo  — de los contados como nuevos, cuántos tenían un
+  //                         pago confirmado ANTES. Tiene que dar cero.
+  business_nuevos_control: `
+    SELECT
+      (SELECT COUNT(*)
+         FROM (SELECT id_paciente, MIN(creacion) AS primera
+                 FROM pacientes_pagos WHERE confirmado = 1
+                GROUP BY id_paciente) f
+         JOIN login l ON l.id = f.id_paciente AND l.tipo = 1
+        WHERE l.paisDominio IN ('AR','UY')
+          AND f.primera >= '2026-09-01 03:00:00'
+          AND f.primera <  '2026-10-01 03:00:00') AS nuevos_del_mes,
+
+      (SELECT COUNT(DISTINCT pp.id_paciente)
+         FROM pacientes_pagos pp
+         JOIN (SELECT id_paciente, MIN(creacion) AS primera
+                 FROM pacientes_pagos WHERE confirmado = 1
+                GROUP BY id_paciente) f
+           ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+         JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+         JOIN (SELECT DISTINCT pc.id_pago
+                 FROM pacientes_cupones pc
+                 JOIN cupones c ON c.id = pc.id_cupon
+                WHERE ${sqlEmpresa()} <> '' AND pc.id_pago IS NOT NULL) bp
+           ON bp.id_pago = pp.id
+        WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+          AND pp.creacion >= '2026-09-01 03:00:00'
+          AND pp.creacion <  '2026-10-01 03:00:00') AS con_cupon_empresa,
+
+      (SELECT COUNT(DISTINCT pp.id_paciente)
+         FROM pacientes_pagos pp
+         JOIN (SELECT id_paciente, MIN(creacion) AS primera
+                 FROM pacientes_pagos WHERE confirmado = 1
+                GROUP BY id_paciente) f
+           ON f.id_paciente = pp.id_paciente AND f.primera < pp.creacion
+         JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+         JOIN (SELECT DISTINCT pc.id_pago
+                 FROM pacientes_cupones pc
+                 JOIN cupones c ON c.id = pc.id_cupon
+                WHERE ${sqlEmpresa()} <> '' AND pc.id_pago IS NOT NULL) bp
+           ON bp.id_pago = pp.id
+        WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+          AND pp.creacion >= '2026-09-01 03:00:00'
+          AND pp.creacion <  '2026-10-01 03:00:00') AS cupon_pero_no_nuevo,
+
+      (SELECT COUNT(*)
+         FROM pacientes_pagos pp
+         JOIN (SELECT id_paciente, MIN(creacion) AS primera
+                 FROM pacientes_pagos WHERE confirmado = 1
+                GROUP BY id_paciente) f
+           ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+         JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+         JOIN (SELECT DISTINCT pc.id_pago
+                 FROM pacientes_cupones pc
+                 JOIN cupones c ON c.id = pc.id_cupon
+                WHERE ${sqlEmpresa()} <> '' AND pc.id_pago IS NOT NULL) bp
+           ON bp.id_pago = pp.id
+        WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+          AND pp.creacion >= '2026-09-01 03:00:00'
+          AND pp.creacion <  '2026-10-01 03:00:00'
+          AND EXISTS (SELECT 1 FROM pacientes_pagos anterior
+                       WHERE anterior.id_paciente = pp.id_paciente
+                         AND anterior.confirmado = 1
+                         AND anterior.creacion < pp.creacion)) AS primer_pago_previo`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
