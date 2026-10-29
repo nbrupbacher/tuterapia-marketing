@@ -579,18 +579,12 @@ const PROBES: Record<string, string> = {
   cupones_business: `
     SELECT c.codigo, c.nombre, c.pais, c.porcentaje, c.activo,
            COUNT(DISTINCT pc.id_paciente) AS pacientes,
-           MAX(pc.fecha) AS ultimo
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
       FROM cupones c
       JOIN pacientes_cupones pc ON pc.id_cupon = c.id
-     WHERE NOT (LOWER(c.codigo) LIKE 'meanimo%' OR LOWER(c.nombre) LIKE 'meanimo%'
-             OR LOWER(c.codigo) LIKE 'terapia%' OR LOWER(c.nombre) LIKE 'terapia%'
-             OR LOWER(c.codigo) LIKE '%fcyo%'   OR LOWER(c.nombre) LIKE '%fcyo%'
-             OR LOWER(c.codigo) LIKE 'ffnic3%'  OR LOWER(c.nombre) LIKE 'ffnic3%'
-             OR LOWER(c.codigo) LIKE 'cuponespecialtt%'
-             OR LOWER(c.nombre) LIKE 'cuponespecialtt%'
-             OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%')
+     WHERE NOT ${ES_PROMOCIONAL}
      GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
-     ORDER BY pacientes DESC LIMIT 30`,
+     ORDER BY pacientes DESC LIMIT 90`,
 
   // Y los que la regla marcó como promocionales, para confirmar que enganchó
   // lo que tenía que enganchar y no de más.
@@ -600,13 +594,7 @@ const PROBES: Record<string, string> = {
            MAX(pc.fecha) AS ultimo
       FROM cupones c
       JOIN pacientes_cupones pc ON pc.id_cupon = c.id
-     WHERE LOWER(c.codigo) LIKE 'meanimo%' OR LOWER(c.nombre) LIKE 'meanimo%'
-        OR LOWER(c.codigo) LIKE 'terapia%' OR LOWER(c.nombre) LIKE 'terapia%'
-        OR LOWER(c.codigo) LIKE '%fcyo%'   OR LOWER(c.nombre) LIKE '%fcyo%'
-        OR LOWER(c.codigo) LIKE 'ffnic3%'  OR LOWER(c.nombre) LIKE 'ffnic3%'
-        OR LOWER(c.codigo) LIKE 'cuponespecialtt%'
-        OR LOWER(c.nombre) LIKE 'cuponespecialtt%'
-        OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%'
+     WHERE ${ES_PROMOCIONAL}
      GROUP BY c.id, c.codigo, c.nombre, c.activo
      ORDER BY pacientes DESC LIMIT 30`,
 
@@ -666,6 +654,42 @@ const PROBES: Record<string, string> = {
       JOIN cupones c ON c.id = pc.id_cupon
      WHERE NOT ${ES_PROMOCIONAL}
        AND pc.fecha >= '2025-09-01'
+     GROUP BY 1 ORDER BY 1`,
+
+  // Las FAMILIAS de cupones business: los primeros seis caracteres del código,
+  // agrupados, cuando hay más de un cupón con ese arranque.
+  //
+  // 803 cupones business para lo que deberían ser unas pocas empresas no
+  // cierra. La hipótesis es que una empresa emite varios —uno por mes, uno por
+  // empleado, uno por convenio— y el prefijo es el nombre de la empresa. Si es
+  // así, la pestaña agrupa por familia y no por cupón, que es la diferencia
+  // entre una tabla de diez filas y una de ochocientas.
+  cupones_business_familias: `
+    SELECT LEFT(LOWER(c.codigo), 6) AS prefijo,
+           COUNT(DISTINCT c.id) AS cupones,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE NOT ${ES_PROMOCIONAL}
+     GROUP BY 1
+     HAVING cupones > 1
+     ORDER BY pacientes DESC LIMIT 60`,
+
+  // Y cómo se reparte la cola: cuántos cupones business tienen un solo
+  // paciente. Decide si la tabla de la pestaña se corta en los grandes o si
+  // hace falta nombrarlos a todos.
+  cupones_business_cola: `
+    SELECT CASE WHEN p.pacientes = 1 THEN 'a 1 paciente'
+                WHEN p.pacientes <= 5 THEN 'b 2 a 5'
+                WHEN p.pacientes <= 20 THEN 'c 6 a 20'
+                ELSE 'd mas de 20' END AS tramo,
+           COUNT(*) AS cupones, SUM(p.pacientes) AS pacientes
+      FROM (SELECT c.id, COUNT(DISTINCT pc.id_paciente) AS pacientes
+              FROM cupones c
+              JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+             WHERE NOT ${ES_PROMOCIONAL}
+             GROUP BY c.id) p
      GROUP BY 1 ORDER BY 1`,
 
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
