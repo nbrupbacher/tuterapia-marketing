@@ -17,6 +17,38 @@ export const maxDuration = 60;
  *
  * Temporary: delete once the queries are validated against Looker.
  */
+/**
+ * La regla del dueño del producto, en SQL y en un solo lugar.
+ *
+ * Promocional es `meanimo`, `terapia` + un apellido, `#fcyo:)`, `ffnic32026`,
+ * `cuponespecialtt` + lo que sea y `7años`. Todo lo demás es business. Se
+ * busca en `codigo` y en `nombre` porque la tabla no dice en cuál de las dos
+ * vive el patrón, y `7a%os%` en vez de `7años` para no depender de cómo esté
+ * codificada la ñ en la conexión.
+ *
+ * Usa el alias `c` para la tabla `cupones`.
+ */
+const ES_PROMOCIONAL = `(
+     LOWER(c.codigo) LIKE 'meanimo%' OR LOWER(c.nombre) LIKE 'meanimo%'
+  OR LOWER(c.codigo) LIKE 'terapia%' OR LOWER(c.nombre) LIKE 'terapia%'
+  OR LOWER(c.codigo) LIKE '%fcyo%'   OR LOWER(c.nombre) LIKE '%fcyo%'
+  OR LOWER(c.codigo) LIKE 'ffnic3%'  OR LOWER(c.nombre) LIKE 'ffnic3%'
+  OR LOWER(c.codigo) LIKE 'cuponespecialtt%'
+  OR LOWER(c.nombre) LIKE 'cuponespecialtt%'
+  OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%')`;
+
+/** Los pacientes que alguna vez usaron un cupón business. */
+const BUSINESS_PACIENTES = `(SELECT DISTINCT pc.id_paciente
+      FROM pacientes_cupones pc
+      JOIN cupones c ON c.id = pc.id_cupon
+     WHERE NOT ${ES_PROMOCIONAL})`;
+
+/** Los PAGOS a los que se aplicó un cupón business. */
+const BUSINESS_PAGOS = `(SELECT DISTINCT pc.id_pago
+      FROM pacientes_cupones pc
+      JOIN cupones c ON c.id = pc.id_cupon
+     WHERE NOT ${ES_PROMOCIONAL} AND pc.id_pago IS NOT NULL)`;
+
 const PROBES: Record<string, string> = {
   // "Sessions per patient" is expected around 9,6 in AR and 13 in UY. The
   // stored figure is 3,77 and 4,46 — the LTV multiplier, which counts only the
@@ -577,6 +609,64 @@ const PROBES: Record<string, string> = {
         OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%'
      GROUP BY c.id, c.codigo, c.nombre, c.activo
      ORDER BY pacientes DESC LIMIT 30`,
+
+  // La serie que dibujaría la pestaña Business: pacientes nuevos por mes, con
+  // las DOS definiciones posibles al lado, porque la diferencia entre ellas es
+  // una decisión de negocio y no se puede elegir a ciegas.
+  //
+  //   primer_pago  — el cupón business se aplicó al pago con el que entró.
+  //                  Es "llegó por una empresa".
+  //   alguna_vez   — usó un cupón business en cualquier momento. Es "está
+  //                  cubierto por una empresa", aunque haya entrado solo.
+  //
+  // `nuevos_total` va para poder ver qué parte del negocio es esto.
+  business_nuevos_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT pp.id_paciente) AS nuevos_total,
+           COUNT(DISTINCT CASE WHEN bp.id_pago IS NOT NULL
+                               THEN pp.id_paciente END) AS nuevos_primer_pago,
+           COUNT(DISTINCT CASE WHEN bv.id_paciente IS NOT NULL
+                               THEN pp.id_paciente END) AS nuevos_alguna_vez
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      LEFT JOIN ${BUSINESS_PAGOS} bp ON bp.id_pago = pp.id
+      LEFT JOIN ${BUSINESS_PACIENTES} bv ON bv.id_paciente = pp.id_paciente
+     WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+       AND pp.creacion >= '2025-09-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Y los activos: sesión realizada en el mes, de alguien que alguna vez usó
+  // un cupón business. Mismo criterio que Exterior usa para sus activos.
+  business_activos_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(s.fecha, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT s.id_paciente) AS activos_total,
+           COUNT(DISTINCT CASE WHEN bv.id_paciente IS NOT NULL
+                               THEN s.id_paciente END) AS activos_business
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+      LEFT JOIN ${BUSINESS_PACIENTES} bv ON bv.id_paciente = s.id_paciente
+     WHERE s.realizada = 1 AND l.paisDominio IN ('AR','UY')
+       AND s.fecha >= '2025-09-01'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Cuántas empresas distintas hay detrás de eso, mes a mes. Solo el conteo:
+  // si son tres, apilar la barra por empresa tiene sentido; si son cuarenta,
+  // la barra no se lee y la pestaña necesita otra forma.
+  business_cuantas_empresas: `
+    SELECT DATE_FORMAT(pc.fecha, '%Y-%m') AS mes,
+           COUNT(DISTINCT c.id) AS cupones_business,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes
+      FROM pacientes_cupones pc
+      JOIN cupones c ON c.id = pc.id_cupon
+     WHERE NOT ${ES_PROMOCIONAL}
+       AND pc.fecha >= '2025-09-01'
+     GROUP BY 1 ORDER BY 1`,
 
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
