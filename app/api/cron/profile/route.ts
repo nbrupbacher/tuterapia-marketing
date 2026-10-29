@@ -439,6 +439,50 @@ const PROBES: Record<string, string> = {
       JOIN ranking r ON r.dominio = b.dominio AND r.pais = b.pais
      GROUP BY 1, 2, 3 ORDER BY 2, 1, 4 DESC`,
 
+  // ¿La base distingue un cupón de business de uno promocional?
+  //
+  // Es LA pregunta de una pestaña de Business: si hay una columna que lo diga,
+  // la pestaña es una consulta más; si no, hace falta una tabla de mapeo a
+  // mano como marketing.utm_mapping, y eso es trabajo de alguien, no de código.
+  //
+  // Primero el reparto de la tabla de cupones por cada columna que pueda ser
+  // un tipo. Solo conteos.
+  cupones_forma: `
+    SELECT COUNT(*) AS cupones,
+           COUNT(DISTINCT c.id) AS ids,
+           MIN(c.creacion) AS primero, MAX(c.creacion) AS ultimo
+      FROM cupones c`,
+
+  // Cuántos pacientes usaron cupón, por mes de su PRIMER pago confirmado, que
+  // es como el tablero cuenta un paciente nuevo. Decide si la serie tiene
+  // volumen o son cuatro por mes.
+  cupones_uso_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL 3 HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT pp.id_paciente) AS nuevos_total,
+           COUNT(DISTINCT CASE WHEN pc.id_paciente IS NOT NULL
+                               THEN pp.id_paciente END) AS nuevos_con_cupon
+      FROM pacientes_pagos pp
+      JOIN (SELECT id_paciente, MIN(creacion) AS primera
+              FROM pacientes_pagos WHERE confirmado = 1
+             GROUP BY id_paciente) f
+        ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+      LEFT JOIN (SELECT DISTINCT id_paciente FROM pacientes_cupones) pc
+        ON pc.id_paciente = pp.id_paciente
+     WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR','UY')
+       AND pp.creacion >= '2025-10-01 03:00:00'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Los cupones más usados, con cuántos pacientes distintos los usaron. El
+  // NOMBRE del cupón es lo que probablemente distinga business de
+  // promocional, así que acá se ve si hay un patrón legible.
+  cupones_top: `
+    SELECT pc.id_cupon, COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.creacion) AS primero, MAX(pc.creacion) AS ultimo
+      FROM pacientes_cupones pc
+     GROUP BY pc.id_cupon ORDER BY pacientes DESC LIMIT 25`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 

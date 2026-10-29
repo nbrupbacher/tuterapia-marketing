@@ -13,7 +13,17 @@ export const maxDuration = 60;
  * Returns column metadata only — never a data row, so no personal data is
  * exposed. Delete this route once the queries are validated against Looker.
  */
+/**
+ * Las cuatro que el proyecto lee, por defecto.
+ *
+ * `?tablas=cupones,pacientes_cupones` describe otras: el catálogo mostró 22 y
+ * el proyecto solo conocía estas cuatro, así que cada vez que aparece una
+ * pregunta nueva —los cupones, ahora— hace falta mirar una que nadie miró.
+ */
 const TABLES = ["login", "pacientes", "sesiones", "pacientes_pagos"];
+
+/** Un nombre de tabla y nada más: esto arma SQL con el valor. */
+const NOMBRE_VALIDO = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * Y el listado completo de tablas, con cuántas filas tiene cada una.
@@ -36,6 +46,15 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const pedidas = new URL(request.url).searchParams.get("tablas");
+  const tablas = pedidas
+    ? pedidas.split(",").map((t) => t.trim()).filter((t) => NOMBRE_VALIDO.test(t))
+    : TABLES;
+
+  if (tablas.length === 0) {
+    return NextResponse.json({ error: "invalid ?tablas=" }, { status: 400 });
+  }
+
   try {
     const schema = await withMysql(async (conn) => {
       const [rows] = await conn.query<
@@ -48,12 +67,12 @@ export async function GET(request: Request) {
       >(
         `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
            FROM information_schema.COLUMNS
-          WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (?, ?, ?, ?)
+          WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (${tablas.map(() => "?").join(", ")})
           ORDER BY TABLE_NAME, ORDINAL_POSITION`,
-        [process.env.MYSQL_DATABASE, ...TABLES],
+        [process.env.MYSQL_DATABASE, ...tablas],
       );
 
-      const [tablas] = await conn.query<
+      const [catalogo] = await conn.query<
         (import("mysql2").RowDataPacket & {
           TABLE_NAME: string;
           TABLE_ROWS: number | null;
@@ -70,7 +89,7 @@ export async function GET(request: Request) {
 
       return {
         columnas,
-        tablas: tablas.map((t) => `${t.TABLE_NAME} ~${t.TABLE_ROWS ?? "?"}`),
+        tablas: catalogo.map((t) => `${t.TABLE_NAME} ~${t.TABLE_ROWS ?? "?"}`),
       };
     });
 
