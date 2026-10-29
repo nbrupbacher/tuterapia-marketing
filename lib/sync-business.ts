@@ -121,11 +121,11 @@ function desdeDia(ahora: Date): string {
 }
 
 /** 'YYYY-MM' del mes en curso, en día local (UTC−3). */
-function mesLocal(ahora: Date): string {
+export function mesLocal(ahora: Date): string {
   return new Date(ahora.getTime() - 3 * 3_600_000).toISOString().slice(0, 7);
 }
 
-function mesesAtras(mes: string, n: number): string {
+export function mesesAtras(mes: string, n: number): string {
   const [year, month] = mes.split("-").map(Number);
   const d = new Date(Date.UTC(year!, month! - 1 - n, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;

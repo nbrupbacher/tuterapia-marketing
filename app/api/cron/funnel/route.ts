@@ -6,6 +6,7 @@ import { sincronizarFunnel, DIAS_DE_FUNNEL } from "@/lib/sync-funnel";
 import { sincronizarTerapeuta } from "@/lib/sync-terapeuta";
 import { sincronizarExterior } from "@/lib/sync-exterior";
 import { sincronizarBusiness } from "@/lib/sync-business";
+import { sincronizarRevenueBusiness } from "@/lib/sync-business-revenue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,8 @@ export const maxDuration = 60;
  *
  * Y Business, igual. Reescribir sus meses viejos no los cambia —los activos se
  * miden al cierre de cada mes, no a hoy—, y que no cambien es precisamente lo
- * que hay que poder comprobar todas las noches.
+ * que hay que poder comprobar todas las noches. El revenue de las empresas va
+ * con él: cuenta las mismas sesiones realizadas.
  */
 export async function GET(request: Request) {
   if (!isCronAuthorized(request)) {
@@ -52,13 +54,15 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const { filas, terapeuta, exterior, business } = await withMysql((mysql) =>
-      withDb(async (db) => ({
-        filas: await sincronizarFunnel(mysql, db, dias, offset),
-        terapeuta: await sincronizarTerapeuta(mysql, db),
-        exterior: await sincronizarExterior(mysql, db),
-        business: await sincronizarBusiness(mysql, db),
-      })),
+    const { filas, terapeuta, exterior, business, revenue } = await withMysql(
+      (mysql) =>
+        withDb(async (db) => ({
+          filas: await sincronizarFunnel(mysql, db, dias, offset),
+          terapeuta: await sincronizarTerapeuta(mysql, db),
+          exterior: await sincronizarExterior(mysql, db),
+          business: await sincronizarBusiness(mysql, db),
+          revenue: await sincronizarRevenueBusiness(mysql, db),
+        })),
     );
 
     await withDb((db) =>
@@ -77,6 +81,7 @@ export async function GET(request: Request) {
       terapeuta,
       exterior,
       business,
+      revenue,
       ms: Date.now() - startedAt,
     });
   } catch (error) {

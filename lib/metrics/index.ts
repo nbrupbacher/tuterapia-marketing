@@ -121,6 +121,37 @@ export function margenUsdSesion({
 }
 
 /**
+ * Lo que entró y lo que quedó, en USD, de un monto cobrado (Business).
+ *
+ * El ingreso es el monto pasado a dólares; lo que queda es el mismo margen de
+ * `margenUsdSesion`, la comisión del país sobre lo cobrado. Así una sesión de
+ * empresa deja lo mismo que cualquier otra a igual precio —unos US$10 en
+ * Uruguay y US$6 en Argentina— y Business no puede dar un margen distinto
+ * del de General. El psicólogo y los impuestos no se restan aparte: la
+ * comisión ya es lo que se queda Tu Terapia.
+ */
+export function ingresoYGananciaUsd({
+  montoLocal,
+  moneda,
+  pctComision,
+  tipoCambio,
+}: {
+  montoLocal: number;
+  moneda: string;
+  pctComision: number;
+  tipoCambio: number | null;
+}): { ingreso: number; ganancia: number } | null {
+  const ingreso = margenUsdSesion({
+    precioLocal: montoLocal,
+    moneda,
+    pctComision: 1,
+    tipoCambio,
+  });
+  if (ingreso === null) return null;
+  return { ingreso, ganancia: ingreso * pctComision };
+}
+
+/**
  * LTV in USD: sessions a patient does, times the dollars a session leaves.
  * Both factors are returned alongside the product — a moving LTV does not say
  * which of the two moved, and they are different levers.
