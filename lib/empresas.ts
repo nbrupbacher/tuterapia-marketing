@@ -78,7 +78,7 @@ export const EMPRESAS: Empresa[] = [
   { nombre: "WILD FI", porNombre: ["%wild fi%"] },
   { nombre: "Chic Parisien", porNombre: ["%chic parisien%"] },
   { nombre: "Securitas", porNombre: ["%securitas%"] },
-  { nombre: "ISA", porNombre: ["isa - %"] },
+  { nombre: "ISA", porNombre: ["isa - %"], porCodigo: ["%isa%"] },
   { nombre: "BESTSELLER", porNombre: ["%bestseller%"] },
   { nombre: "Rootstrap", porNombre: ["%rootstrap%"] },
   { nombre: "Applevel", porNombre: ["%applevel%"] },
@@ -103,6 +103,16 @@ export const EMPRESAS: Empresa[] = [
   { nombre: "Bonprole", porNombre: ["%bonprole%"] },
   { nombre: "HSBC", porNombre: ["%hsbc%"] },
   { nombre: "Pase Libre", porNombre: ["%pase libre%"] },
+
+  // Las que la primera pasada dejó afuera: aparecieron en
+  // `empresas_sin_mapear`, con un paciente cada una. No mueven la serie, pero
+  // una empresa que el mapeo no ve es una empresa que desaparece del tablero.
+  { nombre: "Qubika", porCodigo: ["#bienestarqubika%"] },
+  { nombre: "Perficient", porCodigo: ["#perficient%"] },
+  { nombre: "Innovant", porCodigo: ["#alianzainnovant%"] },
+  { nombre: "On Point", porCodigo: ["#wellnessonpoint%"] },
+  { nombre: "Advance", porCodigo: ["#bienestaradvance%"] },
+  { nombre: "Universidad de los Andes", porCodigo: ["#alianzauandes%"] },
 ];
 
 /** Lo que mira la pestaña: hay empresa detrás del cupón. */

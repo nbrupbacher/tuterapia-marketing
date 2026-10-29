@@ -7,10 +7,14 @@ export const dynamic = "force-dynamic";
 /**
  * MOCKUP de la pestaña Business. Se borra.
  *
- * Los números son REALES: salen de las sondas business_nuevos_por_mes,
- * business_activos_por_mes y business_cuantas_empresas que corrieron contra
- * producción el 2026-10-29. Lo único inventado son los nombres de los cupones
- * del panel de empresas, que están tapados a propósito.
+ * Segunda versión. La primera contaba como business todo cupón que no fuera
+ * promocional, y eso metía Black Friday, cyber, cumpleaños y tres cupones
+ * llamados "fb ads" — daba 67 nuevos y 682 activos en septiembre. Estos
+ * números salen del mapeo de `lib/empresas.ts`, que son empresas de verdad:
+ * 53 y 388.
+ *
+ * Todo es real, de las sondas empresas_* contra producción el 2026-10-29,
+ * nombres de empresa incluidos.
  *
  * Vive en /login-biz porque el middleware deja pasar todo lo que empieza con
  * "login" sin sesión.
@@ -21,37 +25,49 @@ const MESES = [
   "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10",
 ];
 
-/** Pacientes nuevos: el cupón business se aplicó al pago con el que entraron. */
+/** Pacientes nuevos: el cupón de empresa se aplicó al pago con el que entraron. */
 const NUEVOS = {
-  AR: [5, 6, 5, 3, 5, 13, 7, 15, 0, 11, 5, 4, 22, 19],
-  UY: [43, 91, 69, 41, 54, 62, 55, 44, 68, 57, 52, 61, 45, 35],
+  AR: [1, 0, 1, 1, 1, 1, 0, 4, 0, 2, 1, 0, 14, 14],
+  UY: [39, 86, 67, 40, 48, 55, 52, 41, 66, 56, 50, 60, 39, 32],
 };
-/** La otra lectura: usó un cupón business alguna vez, aunque haya entrado solo. */
+/** La otra lectura: usó un cupón de empresa alguna vez, aunque haya entrado solo. */
 const NUEVOS_ALGUNA_VEZ = {
-  AR: [20, 11, 8, 7, 19, 29, 12, 25, 4, 20, 12, 9, 28, 19],
-  UY: [54, 98, 74, 48, 62, 74, 61, 52, 75, 63, 61, 63, 48, 35],
+  AR: [3, 0, 1, 2, 1, 1, 1, 4, 0, 2, 1, 1, 14, 14],
+  UY: [42, 89, 67, 42, 49, 57, 53, 45, 69, 59, 56, 61, 40, 32],
 };
 const NUEVOS_TOTAL = {
   AR: [154, 119, 137, 129, 254, 319, 264, 353, 343, 384, 470, 613, 621, 483],
   UY: [135, 169, 126, 113, 162, 184, 197, 200, 225, 189, 259, 218, 256, 219],
 };
 
-/** Activos: sesión en el mes, de alguien que alguna vez usó un cupón business. */
+/** Activos: sesión en el mes, de alguien que alguna vez usó un cupón de empresa. */
 const ACTIVOS = {
-  AR: [206, 198, 189, 172, 156, 185, 171, 187, 164, 173, 175, 158, 161, 156],
-  UY: [533, 592, 593, 587, 515, 597, 610, 576, 603, 624, 631, 605, 521, 424],
+  AR: [23, 23, 20, 21, 20, 18, 19, 21, 19, 20, 20, 19, 21, 32],
+  UY: [301, 370, 380, 382, 345, 401, 408, 383, 414, 449, 460, 456, 367, 291],
 };
 const ACTIVOS_TOTAL = {
   AR: [690, 664, 649, 640, 644, 791, 831, 946, 1032, 1162, 1322, 1536, 1668, 1620],
   UY: [864, 952, 925, 924, 833, 977, 1046, 1042, 1111, 1119, 1232, 1210, 1200, 1093],
 };
-/** Y la tercera lectura: compró con un cupón business EN el mes. */
+/** Y la tercera lectura: compró con un cupón de empresa EN el mes. */
 const COMPRARON_CON_CUPON = [
-  317, 411, 400, 331, 320, 461, 398, 406, 408, 446, 427, 455, 348, 313,
+  272, 335, 317, 308, 286, 343, 353, 339, 379, 419, 400, 431, 311, 287,
 ];
-/** Cuántos cupones business distintos se usaron cada mes. */
-const CUPONES_POR_MES = [
-  94, 140, 128, 117, 104, 129, 131, 133, 124, 128, 140, 139, 130, 129,
+/** Cuántas empresas distintas aparecieron cada mes. */
+const EMPRESAS_POR_MES = [
+  35, 34, 36, 34, 34, 36, 33, 36, 38, 39, 46, 42, 44, 37,
+];
+
+/** Las más grandes, por pacientes distintos desde que existe cada cupón. */
+const TOP_EMPRESAS: [string, number][] = [
+  ["Farmashop", 368],
+  ["Fosmetal", 260],
+  ["TCS", 233],
+  ["UTEC", 93],
+  ["December Labs", 67],
+  ["Galicia", 61],
+  ["L'Oréal", 50],
+  ["AXO", 49],
 ];
 
 const ULTIMO = MESES.length - 1; // 2026-10, sin cerrar
@@ -112,27 +128,24 @@ export default function MockupBusiness() {
 
       <p className="mt-4 border-l-2 border-gold bg-warn-bg px-3 py-2 text-sm text-texto">
         Business son los pacientes que llegan con el{" "}
-        <strong>cupón de una empresa</strong>. No hay columna que lo diga: la
-        tabla <code>cupones</code> no tiene tipo, así que business se define por
-        descarte —todo cupón que <strong>no</strong> sea uno de los
-        promocionales (<code>meanimo</code>, <code>terapia</code> + apellido,{" "}
-        <code>#fcyo:)</code>, <code>ffnic32026</code>,{" "}
-        <code>cuponespecialtt</code>…, <code>7años</code>). Hoy eso deja{" "}
-        <strong>803 cupones business</strong> contra{" "}
-        <strong>28 promocionales</strong>, de los 831 que alguna vez se usaron.
+        <strong>cupón de una empresa</strong>. La tabla <code>cupones</code> no
+        tiene columna de tipo, así que la empresa sale del nombre del cupón:{" "}
+        <strong>67 empresas</strong> mapeadas a mano en{" "}
+        <code>lib/empresas.ts</code>. Las campañas quedan afuera —Black Friday,
+        cyber, cumpleaños y los cupones mensuales de ads no son una empresa.
       </p>
 
       <div className="mt-4 grid gap-[10px] md:grid-cols-3">
         <Card
-          nombre="Nuevos business"
+          nombre="Nuevos de empresa"
           valor={entero(nuevosCerrado)}
-          pie={`↑ +3% vs. ${mesCorto(MESES[PREVIO]!)} (${nuevosPrevio})`}
-          tono="text-green"
+          pie={`↓ −12% vs. ${mesCorto(MESES[PREVIO]!)} (${nuevosPrevio})`}
+          tono="text-coral"
         />
         <Card
-          nombre="Activos business"
+          nombre="Activos de empresa"
           valor={entero(activosCerrado)}
-          pie={`↓ −11% vs. ${mesCorto(MESES[PREVIO]!)} (${activosPrevio})`}
+          pie={`↓ −18% vs. ${mesCorto(MESES[PREVIO]!)} (${activosPrevio})`}
           tono="text-coral"
         />
         <Card
@@ -146,20 +159,20 @@ export default function MockupBusiness() {
       </div>
 
       <Bloque
-        titulo="Pacientes nuevos business · por plataforma"
+        titulo="Pacientes nuevos de empresa · por plataforma"
         series={nuevos}
-        pie="Nuevo business es el que hizo su primera compra en el mes y esa compra llevaba un cupón de empresa. Casi todo es Uruguay: en Argentina son entre 0 y 22 por mes contra 483 nuevos totales."
+        pie="Nuevo de empresa es el que hizo su primera compra en el mes y esa compra llevaba un cupón de empresa. Hasta agosto Argentina aportaba uno o ninguno por mes; los 14 de septiembre y octubre son Pilay, que arrancó el 24 de septiembre y ya lleva 25 pacientes."
       />
 
       <Bloque
-        titulo="Pacientes activos business · por plataforma"
+        titulo="Pacientes activos de empresa · por plataforma"
         series={activos}
-        pie="Activo business es el que hizo una sesión en el mes y alguna vez usó un cupón de empresa — el mismo criterio que usa Exterior para sus activos."
+        pie="Activo de empresa es el que hizo una sesión en el mes y alguna vez usó un cupón de empresa — el mismo criterio que usa Exterior para sus activos. Uruguay venía en 460 en julio y está en 291 en octubre."
       />
 
       <section className="mt-8">
         <h2 className="text-xs uppercase tracking-wide text-ter">
-          Cuántas empresas hay detrás · cupones business distintos por mes
+          Cuántas empresas aparecen cada mes
         </h2>
         <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
@@ -172,11 +185,11 @@ export default function MockupBusiness() {
                 <div className="h-1.5 flex-1 rounded-sm bg-surface-2">
                   <div
                     className="h-1.5 rounded-sm bg-orange"
-                    style={{ width: `${(CUPONES_POR_MES[i]! / 140) * 100}%` }}
+                    style={{ width: `${(EMPRESAS_POR_MES[i]! / 46) * 100}%` }}
                   />
                 </div>
                 <span className="w-24 shrink-0 text-right tabular-nums text-texto">
-                  {CUPONES_POR_MES[i]} cupones
+                  {EMPRESAS_POR_MES[i]} empresas
                 </span>
                 <span className="w-24 shrink-0 text-right tabular-nums text-sec">
                   {COMPRARON_CON_CUPON[i]} pacientes
@@ -189,40 +202,36 @@ export default function MockupBusiness() {
             <p className="text-xs uppercase tracking-wide text-ter">
               Por qué la barra no se parte por empresa
             </p>
-            <p className="mt-0.5 text-xl text-texto">129 cupones en un mes</p>
+            <p className="mt-0.5 text-xl text-texto">37 empresas en octubre</p>
             <p className="mt-2 text-sm text-sec">
-              Un mes típico usa entre 94 y 140 cupones business distintos, con
-              unos tres pacientes cada uno. Apilada por empresa, la barra tendría
-              130 franjas de un píxel. Así que la empresa va en una tabla aparte
-              —las diez o veinte más grandes— y la barra se parte por plataforma,
-              como en Exterior.
+              Entre 33 y 46 por mes, y la cola es larga: después de las diez
+              primeras hay empresas de uno o dos pacientes. Apilada por empresa
+              la barra sería ilegible, así que la barra se parte por plataforma
+              —como en Exterior— y la empresa va en esta tabla.
             </p>
             <table className="mt-3 w-full text-xs">
               <tbody className="text-sec">
-                {["EMPRESA A", "EMPRESA B", "EMPRESA C", "EMPRESA D"].map(
-                  (e, i) => (
-                    <tr key={e} className="border-t border-borde">
-                      <td className="py-1.5 text-texto">{e}</td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {[64, 41, 33, 28][i]} pacientes
-                      </td>
-                    </tr>
-                  ),
-                )}
+                {TOP_EMPRESAS.map(([nombre, pacientes]) => (
+                  <tr key={nombre} className="border-t border-borde">
+                    <td className="py-1.5 text-texto">{nombre}</td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {pacientes} pacientes
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             <p className="mt-2 text-xs text-ter">
-              Nombres tapados: los reales no los mostré todavía porque son datos
-              que no habías pedido ver en pantalla.
+              Pacientes distintos desde que existe cada cupón, no del mes.
             </p>
           </aside>
         </div>
       </section>
 
       <Bloque
-        titulo="La tercera lectura · compraron con cupón business EN el mes"
+        titulo="La tercera lectura · compraron con cupón de empresa EN el mes"
         series={lecturas}
-        pie="Esta es la serie que no depende del pasado: quién usó un cupón de empresa en el mes. En septiembre son 348, contra 682 por el criterio de «alguna vez». La mitad de los «activos business» ya no están comprando con cupón."
+        pie="La serie que no depende del pasado: quién usó un cupón de empresa en el mes. En septiembre son 311, contra 388 por el criterio de «alguna vez». Acá incluye Argentina, que en la barra de activos casi no se ve."
       />
 
       <section className="mt-10 rounded-lg border border-borde bg-surface px-4 py-3">
@@ -231,33 +240,23 @@ export default function MockupBusiness() {
         </p>
         <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-sec">
           <li>
-            <strong className="text-texto">Qué es un activo business.</strong>{" "}
-            «Alguna vez usó cupón» da 682 en septiembre; «compró con cupón ese
-            mes» da 348. Son dos preguntas distintas y la diferencia es el doble.
+            <strong className="text-texto">Qué es un activo de empresa.</strong>{" "}
+            «Alguna vez usó cupón» da 388 en septiembre; «compró con cupón ese
+            mes» da 311. Es la única decisión que queda.
           </li>
           <li>
-            <strong className="text-texto">Qué es un nuevo business.</strong> El
+            <strong className="text-texto">Qué es un nuevo de empresa.</strong> El
             cupón en el pago de entrada ({NUEVOS.UY[CERRADO]} en septiembre en UY) o alguna vez ({NUEVOS_ALGUNA_VEZ.UY[CERRADO]}). Prefiero el primero: «alguna vez» hace crecer un mes ya
             cerrado cada vez que un paciente viejo se suma a una empresa, y el
-            tablero no recalcula meses cerrados.
+            tablero no recalcula meses cerrados. Con empresas la diferencia es
+            chica, así que es barato elegir bien.
           </li>
           <li>
-            <strong className="text-texto">La lista de promocionales.</strong> Me
-            la diste como «los que están activos actualmente», pero la serie
-            mira 13 meses atrás. Un promocional viejo que no esté en la lista
-            hoy cuenta como business. ¿Hubo otros antes?
-          </li>
-          <li>
-            <strong className="text-texto">
-              Los nombres de las empresas en pantalla.
-            </strong>{" "}
-            La tabla de arriba necesita el nombre del cupón. ¿Los muestro?
-          </li>
-          <li>
-            <strong className="text-texto">803 cupones business</strong> para lo
-            que pensaba que eran unas pocas empresas. Puede ser que la empresa
-            emita un cupón por empleado. Si es así, la tabla de empresas
-            necesita agrupar por prefijo, no por cupón.
+            <strong className="text-texto">Cinco cupones que no sé de quién son:</strong>{" "}
+            <code>#BienestarMN</code>, <code>#AlianzaRB</code>,{" "}
+            <code>#alianzaGA</code>, <code>#N2PMO</code> e{" "}
+            <code>#iclos097</code>. Un paciente cada uno, así que no mueven la
+            serie, pero si son empresa van en la lista.
           </li>
         </ol>
       </section>
