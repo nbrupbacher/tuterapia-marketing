@@ -3,6 +3,7 @@ import type { RowDataPacket } from "mysql2";
 import { withMysql } from "@/lib/mysql";
 import { isCronAuthorized } from "@/lib/auth";
 import { sqlEmpresa } from "@/lib/empresas";
+import { sqlUso } from "@/lib/queries/business-revenue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,6 +50,10 @@ const BUSINESS_PAGOS = `(SELECT DISTINCT pc.id_pago
       FROM pacientes_cupones pc
       JOIN cupones c ON c.id = pc.id_cupon
      WHERE NOT ${ES_PROMOCIONAL} AND pc.id_pago IS NOT NULL)`;
+
+/** Las dos ventanas que usan las sondas de revenue. */
+const DOS_MESES = "s.fecha >= '2026-09-01 03:00:00' AND s.fecha < '2026-11-01 03:00:00'";
+const TRECE_MESES = "s.fecha >= '2025-10-01 03:00:00' AND s.fecha < '2026-11-01 03:00:00'";
 
 const PROBES: Record<string, string> = {
   // "Sessions per patient" is expected around 9,6 in AR and 13 in UY. The
@@ -947,6 +952,47 @@ const PROBES: Record<string, string> = {
                        WHERE anterior.id_paciente = pp.id_paciente
                          AND anterior.confirmado = 1
                          AND anterior.creacion < pp.creacion)) AS primer_pago_previo`,
+
+  // ¿La consulta nueva de revenue da LO MISMO que la vieja?
+  //
+  // La vieja se muere a los 60 segundos en la ventana de trece meses, así que
+  // la comparación va sobre dos meses, donde las dos terminan. Devuelve las
+  // filas en las que difieren: tiene que dar vacío.
+  //
+  // Se comparan las seis claves del GROUP BY más las dos medidas. `pagado` se
+  // redondea a dos decimales porque es una suma de divisiones y el orden en
+  // que se acumulan puede cambiar el último bit.
+  revenue_diff: `
+    SELECT u.mes, u.pais, u.empresa, u.plan, u.modalidad, u.moneda,
+           SUM(u.ses_v) AS sesiones_vieja, SUM(u.ses_n) AS sesiones_nueva,
+           ROUND(SUM(u.pag_v), 2) AS pagado_vieja,
+           ROUND(SUM(u.pag_n), 2) AS pagado_nueva
+      FROM (
+        SELECT mes, pais, empresa, plan, modalidad, moneda,
+               sesiones AS ses_v, 0 AS ses_n, pagado AS pag_v, 0 AS pag_n
+          FROM (${sqlUso(DOS_MESES, "vieja")}) v
+        UNION ALL
+        SELECT mes, pais, empresa, plan, modalidad, moneda,
+               0, sesiones, 0, pagado
+          FROM (${sqlUso(DOS_MESES, "nueva")}) n
+      ) u
+     GROUP BY 1,2,3,4,5,6
+    HAVING sesiones_vieja <> sesiones_nueva
+        OR ABS(pagado_vieja - pagado_nueva) > 0.01`,
+
+  // Y cuántas filas devuelve cada una, para que "no hay diferencias" no sea
+  // porque las dos devolvieron vacío.
+  revenue_diff_volumen: `
+    SELECT (SELECT COUNT(*) FROM (${sqlUso(DOS_MESES, "vieja")}) v) AS filas_vieja,
+           (SELECT COUNT(*) FROM (${sqlUso(DOS_MESES, "nueva")}) n) AS filas_nueva,
+           (SELECT SUM(sesiones) FROM (${sqlUso(DOS_MESES, "vieja")}) v2) AS sesiones_vieja,
+           (SELECT SUM(sesiones) FROM (${sqlUso(DOS_MESES, "nueva")}) n2) AS sesiones_nueva`,
+
+  // La nueva sobre los trece meses de verdad: lo que no podía hacer la vieja.
+  revenue_nueva_13m: `
+    SELECT COUNT(*) AS filas, SUM(sesiones) AS sesiones,
+           COUNT(DISTINCT empresa) AS empresas, MIN(mes) AS desde, MAX(mes) AS hasta
+      FROM (${sqlUso(TRECE_MESES, "nueva")}) t`,
 
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
