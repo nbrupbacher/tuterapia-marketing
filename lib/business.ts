@@ -7,11 +7,17 @@ import { type Rango } from "@/lib/dashboard";
  * Todo sale de `marketing.business_mensual`, que escribe el cron del funnel.
  * La pantalla no consulta MySQL nunca.
  *
- * Las barras se parten siempre por **plataforma** y la empresa va en una tabla
- * aparte. No es una elección estética: hay entre 33 y 46 empresas distintas
- * por mes y la cola es larga —después de las diez primeras hay empresas de uno
- * o dos pacientes—, así que una barra apilada por empresa sería cuarenta
- * franjas de un píxel.
+ * Las barras siguen el patrón de Exterior: en TOTAL se parten por
+ * **plataforma**, y con una plataforma elegida los **nuevos** se parten por
+ * **empresa**.
+ *
+ * Los activos no, y no es por falta de ganas. Un paciente puede haber usado
+ * cupones de dos empresas y cuenta en las dos: en septiembre, sumar las 46
+ * empresas de Uruguay da 373 activos contra 366 personas distintas. Apilar eso
+ * daría una barra más alta que la tarjeta de al lado, que es exactamente lo
+ * que METRICAS.md §8 prohíbe. Los nuevos no tienen ese problema —se midió: la
+ * diferencia es cero en los veintiséis meses×plataforma— porque un paciente
+ * entra con el cupón de una sola empresa.
  */
 
 /** La fila que trae el total del mes, ya deduplicado. */
@@ -117,8 +123,19 @@ export function armar(
   const totalesPorPlataforma = filas.filter((f) => f.empresa === TODAS);
   const deEmpresas = filas.filter((f) => f.empresa !== TODAS);
 
-  const nuevos = serie(totalesPorPlataforma, meses, (f) => Number(f.nuevos));
-  const activos = serie(totalesPorPlataforma, meses, (f) => Number(f.activos));
+  // Con una plataforma elegida, los nuevos se abren por empresa. En TOTAL no:
+  // ahí la pregunta es cuánto pesa cada plataforma, y mezclar las empresas de
+  // las dos en una sola barra no contesta ninguna de las dos cosas.
+  const nuevos = esTotal
+    ? serie(totalesPorPlataforma, meses, (f) => f.pais, (f) => Number(f.nuevos))
+    : serie(deEmpresas, meses, (f) => f.empresa, (f) => Number(f.nuevos));
+
+  const activos = serie(
+    totalesPorPlataforma,
+    meses,
+    (f) => f.pais,
+    (f) => Number(f.activos),
+  );
 
   // El último mes CERRADO, no el último a secas.
   const cerrados = meses.filter((m) => m !== mesEnCurso);
@@ -177,31 +194,54 @@ export function armar(
   };
 }
 
-/** Una serie por plataforma, con los meses completos. */
+/**
+ * Una serie por clave, con los meses completos.
+ *
+ * Los meses sin fila para una clave llevan 0 y no un hueco: una barra apilada
+ * necesita que todas las series tengan el mismo largo, y una empresa que no
+ * trajo a nadie en marzo trajo cero, no "no se sabe".
+ *
+ * Las plataformas van en orden alfabético, siempre el mismo, para que el color
+ * de AR no cambie entre pestañas. Las empresas van por total descendente, así
+ * las grandes se llevan los colores fuertes y la cola queda al final, donde el
+ * gráfico la agrupa.
+ */
 function serie(
   filas: Fila[],
   meses: string[],
+  clave: (f: Fila) => string,
   valor: (f: Fila) => number,
 ): SerieBusiness[] {
-  const porPais = new Map<string, Map<string, number>>();
+  const porClave = new Map<string, Map<string, number>>();
+  const total = new Map<string, number>();
+
   for (const f of filas) {
     const v = valor(f);
     if (v === 0) continue;
-    let mesesDe = porPais.get(f.pais);
+    const k = clave(f);
+    let mesesDe = porClave.get(k);
     if (!mesesDe) {
       mesesDe = new Map();
-      porPais.set(f.pais, mesesDe);
+      porClave.set(k, mesesDe);
     }
     mesesDe.set(f.mes, (mesesDe.get(f.mes) ?? 0) + v);
+    total.set(k, (total.get(k) ?? 0) + v);
   }
+
+  // Las plataformas son dos y se nombran igual siempre; las empresas son
+  // muchas y el orden lo decide el volumen.
+  const esPlataforma = [...porClave.keys()].every((k) => k === "AR" || k === "UY");
+  const orden = esPlataforma
+    ? [...porClave.keys()].sort()
+    : [...total.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
 
   const mesEnCurso = meses[meses.length - 1];
 
-  return [...porPais.keys()].sort().map((p) => ({
-    nombre: p,
+  return orden.map((k) => ({
+    nombre: k,
     puntos: meses.map((m) => ({
       mes: m,
-      valor: porPais.get(p)?.get(m) ?? 0,
+      valor: porClave.get(k)?.get(m) ?? 0,
       enCurso: m === mesEnCurso,
     })),
   }));

@@ -6,6 +6,7 @@ import {
   type SerieBusiness,
   type VistaBusiness,
 } from "@/lib/business";
+import { SIN_AGRUPAR } from "@/components/composicion";
 import { entero, porcentaje, mesCorto } from "@/lib/ui/format";
 
 export const dynamic = "force-dynamic";
@@ -13,20 +14,46 @@ export const dynamic = "force-dynamic";
 /**
  * Business: los pacientes que llegan con el cupón de una empresa.
  *
- * Las barras se parten por plataforma y la empresa va en una tabla aparte.
- * Entre 33 y 46 empresas distintas por mes, y después de las diez primeras hay
- * empresas de uno o dos pacientes: apilada por empresa la barra sería cuarenta
- * franjas de un píxel.
+ * El patrón de Exterior: en TOTAL las barras se parten por plataforma, y
+ * eligiendo AR o UY los **nuevos** se parten por empresa.
+ *
+ * Los activos se quedan por plataforma. Un paciente puede haber usado cupones
+ * de dos empresas y cuenta en las dos, así que apilarlos daría una barra más
+ * alta que la tarjeta: en septiembre, 373 contra 366 personas. Los nuevos no
+ * tienen ese problema porque se entra con el cupón de una sola empresa.
  */
 
-const COLOR: Record<string, { relleno: string; trazo: string }> = {
-  AR: { relleno: "fill-teal", trazo: "stroke-teal" },
-  UY: { relleno: "fill-gold", trazo: "stroke-gold" },
-};
+/**
+ * Los colores del apilado, escritos literales.
+ *
+ * Tailwind escanea el fuente y una clase armada en tiempo de ejecución nunca
+ * llega a la hoja de estilos, así que esta lista no se construye con un
+ * template. Son los mismos doce que usa Exterior.
+ */
+const PALETA = [
+  { relleno: "fill-orange", trazo: "stroke-orange" },
+  { relleno: "fill-teal", trazo: "stroke-teal" },
+  { relleno: "fill-gold", trazo: "stroke-gold" },
+  { relleno: "fill-orange-dk", trazo: "stroke-orange-dk" },
+  { relleno: "fill-coral", trazo: "stroke-coral" },
+  { relleno: "fill-e1", trazo: "stroke-e1" },
+  { relleno: "fill-e3", trazo: "stroke-e3" },
+  { relleno: "fill-e5", trazo: "stroke-e5" },
+  { relleno: "fill-e2", trazo: "stroke-e2" },
+  { relleno: "fill-e4", trazo: "stroke-e4" },
+  { relleno: "fill-e6", trazo: "stroke-e6" },
+  { relleno: "fill-dim", trazo: "stroke-dim" },
+];
 
-function aSeries(series: SerieBusiness[]): Serie[] {
-  return series.map((s) => {
-    const color = COLOR[s.nombre] ?? { relleno: "fill-dim", trazo: "stroke-dim" };
+/** En TOTAL cada plataforma lleva su color de identidad, como en General. */
+const COLOR_PLATAFORMA: Record<string, number> = { AR: 1, UY: 2 };
+
+function aSeries(series: SerieBusiness[], porPlataforma: boolean): Serie[] {
+  return series.map((s, i) => {
+    const color =
+      PALETA[
+        porPlataforma ? (COLOR_PLATAFORMA[s.nombre] ?? i) : i % PALETA.length
+      ]!;
     return {
       nombre: s.nombre,
       trazo: color.trazo,
@@ -43,6 +70,8 @@ export function PantallaBusiness({
   vista: VistaBusiness;
   pais: string;
 }) {
+  const esTotal = pais === "TOTAL";
+
   if (vista.vacia) {
     return (
       <p className="text-sm text-sec">
@@ -66,17 +95,24 @@ export function PantallaBusiness({
       <Tarjetas vista={vista} pais={pais} />
 
       <Bloque
-        titulo="Pacientes nuevos de empresa · por plataforma"
-        series={aSeries(vista.nuevos)}
+        titulo={`Pacientes nuevos de empresa · ${
+          esTotal ? "por plataforma" : `plataforma ${pais}, por empresa`
+        }`}
+        series={aSeries(vista.nuevos, esTotal)}
         pais={pais}
-        pie="Nuevo de empresa es el que hizo su primera compra en el mes y esa compra llevaba un cupón de empresa."
+        pie={
+          esTotal
+            ? "Nuevo de empresa es el que hizo su primera compra en el mes y esa compra llevaba un cupón de empresa. Eligiendo AR o UY arriba, la barra se abre por empresa."
+            : "Nuevo de empresa es el que hizo su primera compra en el mes y esa compra llevaba un cupón de empresa. Las franjas suman exacto: se entra con el cupón de una sola empresa."
+        }
+        recorte={esTotal ? undefined : SIN_AGRUPAR}
       />
 
       <Bloque
         titulo="Pacientes activos de empresa · por plataforma"
-        series={aSeries(vista.activos)}
+        series={aSeries(vista.activos, true)}
         pais={pais}
-        pie="Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. El corte al cierre del mes, y no a hoy, es lo que hace que un mes cerrado no cambie nunca."
+        pie="Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. Esta barra no se abre por empresa: alguien que usó cupones de dos cuenta en las dos, y la barra quedaría más alta que la tarjeta de arriba."
       />
 
       <Empresas vista={vista} />
@@ -149,11 +185,20 @@ function Bloque({
   series,
   pais,
   pie,
+  recorte,
 }: {
   titulo: string;
   series: Serie[];
   pais: string;
   pie: string;
+  /**
+   * Sin recorte cuando las franjas son empresas: el panel es lo único que las
+   * nombra, y con "otras" la mitad de la barra queda sin nombre. Es el mismo
+   * pedido que en Exterior —"prefiero que los muestres que decir resto"—, y
+   * acá pesa más todavía porque un color repetido entre doce es menos malo
+   * que una franja de la que no se sabe de qué empresa es.
+   */
+  recorte?: { minimo: number; filas: number };
 }) {
   return (
     <section className="mt-8">
@@ -165,6 +210,7 @@ function Bloque({
         identidad={identidadDe(pais)}
         apiladas
         leyendaEnCurso="mes sin cerrar"
+        recortePanel={recorte}
       />
       <p className="mt-3 text-sm text-sec">{pie}</p>
     </section>

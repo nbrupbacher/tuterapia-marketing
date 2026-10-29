@@ -1096,9 +1096,19 @@ haciendo esas sesiones. La cola muerta son 14 personas, un 3,6%.
 
 ### La pestaña
 
-Las barras se parten **siempre por plataforma** y la empresa va en una tabla
-aparte. Hay entre 33 y 46 empresas distintas por mes y la cola es larga:
-apilada por empresa, la barra sería cuarenta franjas de un píxel.
+Las barras siguen el patrón de Exterior (§6 sexies): en TOTAL se parten por
+**plataforma**, y eligiendo AR o UY los **nuevos** se parten por **empresa**,
+con el panel del costado nombrando a todas sin agrupar una cola en "otras".
+
+Los **activos no se parten por empresa**, y no es por falta de ganas. Un
+paciente puede haber usado cupones de dos empresas y cuenta en las dos: en
+septiembre de 2026, sumar las 46 empresas de Uruguay da 373 activos contra 366
+personas distintas. Apilar eso daría una barra más alta que la tarjeta de
+arriba, que es lo que §8 prohíbe.
+
+Los nuevos no tienen ese problema y está medido: la diferencia entre la fila
+`TODAS` y la suma de las empresas es **cero en los veintiséis meses×plataforma**
+de la ventana. Se entra con el cupón de una sola empresa.
 
 La tabla mide **el rango que se está mirando**, no toda la historia. Con toda
 la historia, SiSi entraba al top con 20 pacientes aunque su último cupón es de
