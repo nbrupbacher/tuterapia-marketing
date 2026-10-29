@@ -73,6 +73,7 @@ export function TooltipUtm({
   detalle,
   estilo,
   mono = true,
+  nota,
 }: {
   detalle: Detalle;
   estilo: React.CSSProperties;
@@ -82,6 +83,8 @@ export function TooltipUtm({
    * the body font.
    */
   mono?: boolean;
+  /** A line under the list, for when the rows need a caveat. */
+  nota?: string;
 }) {
   const valor = (v: number) => (detalle.rate ? porcentaje(v) : entero(v));
 
@@ -128,6 +131,12 @@ export function TooltipUtm({
           </li>
         ) : null}
       </ul>
+
+      {nota ? (
+        <p className="mt-1.5 border-t border-borde pt-1 text-[11px] text-ter">
+          {nota}
+        </p>
+      ) : null}
     </div>
   );
 }

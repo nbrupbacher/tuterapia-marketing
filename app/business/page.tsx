@@ -7,6 +7,7 @@ import {
   type SerieBusiness,
   type VistaBusiness,
 } from "@/lib/business";
+import type { Punto } from "@/lib/desglose";
 import { SIN_AGRUPAR } from "@/components/composicion";
 import { entero, porcentaje, mesCorto } from "@/lib/ui/format";
 
@@ -21,7 +22,9 @@ export const dynamic = "force-dynamic";
  * Los activos se quedan por plataforma. Un paciente puede haber usado cupones
  * de dos empresas y cuenta en las dos, así que apilarlos daría una barra más
  * alta que la tarjeta: en septiembre, 373 contra 366 personas. Los nuevos no
- * tienen ese problema porque se entra con el cupón de una sola empresa.
+ * tienen ese problema porque se entra con el cupón de una sola empresa. Las
+ * empresas de los activos van en el tooltip, que puede sumar más que la barra
+ * y lo dice.
  */
 
 /**
@@ -115,7 +118,9 @@ export function PantallaBusiness({
         titulo="Pacientes activos de empresa · por plataforma"
         series={aSeries(vista.activos, true)}
         pais={pais}
-        pie="Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. Esta barra no se abre por empresa: alguien que usó cupones de dos cuenta en las dos, y la barra quedaría más alta que la tarjeta de arriba."
+        pie="Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. Pasando el mouse por un mes se ven sus empresas. La barra no se abre por empresa: alguien que usó cupones de dos cuenta en las dos, y la barra quedaría más alta que la tarjeta de arriba."
+        utm={vista.activosEmpresa}
+        solapa
       />
 
       <Empresas vista={vista} />
@@ -189,6 +194,8 @@ function Bloque({
   pais,
   pie,
   recorte,
+  utm,
+  solapa = false,
 }: {
   titulo: string;
   series: Serie[];
@@ -202,6 +209,10 @@ function Bloque({
    * que una franja de la que no se sabe de qué empresa es.
    */
   recorte?: { minimo: number; filas: number };
+  /** Las empresas de cada mes, para el tooltip. */
+  utm?: Punto[];
+  /** Si las filas del tooltip pueden contar dos veces a una persona. */
+  solapa?: boolean;
 }) {
   return (
     <section className="mt-8">
@@ -214,6 +225,9 @@ function Bloque({
         apiladas
         leyendaEnCurso="mes sin cerrar"
         recortePanel={recorte}
+        utm={utm}
+        clavesMono={false}
+        solapa={solapa}
       />
       <p className="mt-3 text-sm text-sec">{pie}</p>
     </section>

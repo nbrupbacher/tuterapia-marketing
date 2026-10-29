@@ -42,6 +42,12 @@ export type VistaBusiness = {
   meses: string[];
   nuevos: SerieBusiness[];
   activos: SerieBusiness[];
+  /**
+   * Los activos de cada mes por empresa, para el tooltip de la barra de
+   * activos. No suman la barra: quien usó cupones de dos empresas está en las
+   * dos.
+   */
+  activosEmpresa: Desglose["utm"];
   /** Las empresas del rango, de la más grande a la más chica. */
   empresas: FilaEmpresa[];
   /** Cuántas empresas distintas aparecieron en cada mes. */
@@ -173,6 +179,13 @@ export function armar(
     meses,
     nuevos,
     activos,
+    activosEmpresa: porEmpresa(
+      deEmpresas.map((f) => ({
+        periodo: f.mes,
+        empresa: f.empresa,
+        valor: Number(f.activos),
+      })),
+    ),
     empresas: armarEmpresas(deEmpresas),
     porMes: meses.map((m) => ({
       mes: m,
@@ -311,6 +324,27 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
 }
 
 /**
+ * Las filas de empresa en la forma del tooltip, una por período y empresa.
+ *
+ * En TOTAL una empresa con pacientes en AR y en UY trae dos filas por
+ * período; acá se juntan en una, porque el tooltip pregunta de qué empresa y
+ * no de qué plataforma.
+ */
+function porEmpresa(
+  filas: { periodo: string; empresa: string; valor: number }[],
+): Desglose["utm"] {
+  const por = new Map<string, Desglose["utm"][number]>();
+  for (const f of filas) {
+    if (f.empresa === TODAS || f.valor === 0) continue;
+    const k = `${f.periodo}|${f.empresa}`;
+    const punto = por.get(k);
+    if (punto) punto.valor += f.valor;
+    else por.set(k, { periodo: f.periodo, clave: f.empresa, valor: f.valor });
+  }
+  return [...por.values()];
+}
+
+/**
  * Los últimos días, en la forma que espera `GraficoDiario`.
  *
  * Se parte igual que la barra mensual —por plataforma en TOTAL, por empresa
@@ -321,9 +355,8 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
  * `utm` lleva las empresas de cada día, para el tooltip. En TOTAL las franjas
  * son plataformas y la empresa no se ve en ningún lado; dentro de una
  * plataforma sí son empresas, pero son más que los doce colores y la franja
- * sola no dice cuál es. Una empresa con nuevos en AR y en UY el mismo día va
- * en una sola fila. Las filas suman lo mismo que la barra porque un paciente
- * entra con el cupón de una sola empresa.
+ * sola no dice cuál es. Las filas suman lo mismo que la barra porque un
+ * paciente entra con el cupón de una sola empresa.
  */
 function armarDiario(
   dias: FilaDia[],
@@ -351,19 +384,15 @@ function armarDiario(
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k);
 
-  const empresas = new Map<string, Desglose["utm"][number]>();
-  for (const f of filas) {
-    const valor = Number(f.nuevos);
-    if (f.empresa === TODAS || valor === 0) continue;
-    const k = `${f.dia}|${f.empresa}`;
-    const punto = empresas.get(k);
-    if (punto) punto.valor += valor;
-    else empresas.set(k, { periodo: f.dia, clave: f.empresa, valor });
-  }
-
   return {
     barras,
     plataformas: esTotal ? claves.sort() : claves,
-    utm: [...empresas.values()],
+    utm: porEmpresa(
+      filas.map((f) => ({
+        periodo: f.dia,
+        empresa: f.empresa,
+        valor: Number(f.nuevos),
+      })),
+    ),
   };
 }

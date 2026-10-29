@@ -60,6 +60,8 @@ export function GraficoSerie({
   rate = false,
   leyendaEnCurso,
   recortePanel,
+  clavesMono = true,
+  solapa = false,
 }: {
   series: Serie[];
   tipo: "barras" | "linea";
@@ -80,6 +82,14 @@ export function GraficoSerie({
   leyendaEnCurso?: string;
   /** Cómo recorta el panel la cola. Por defecto, cinco filas y "otras". */
   recortePanel?: { minimo: number; filas: number };
+  /** Whether the tooltip's keys are codes (monospace) or plain names. */
+  clavesMono?: boolean;
+  /**
+   * The tooltip's rows can count one person twice, so they may add up to
+   * more than the bar. When they do, the tooltip says so instead of leaving
+   * two totals that disagree without explanation.
+   */
+  solapa?: boolean;
 }) {
   const [activo, setActivo] = useState<number | null>(null);
   const valores = series.flatMap((s) =>
@@ -146,6 +156,15 @@ export function GraficoSerie({
   const detalle = mesActivo
     ? detalleDe(utm, mesActivo, mesCorto(mesActivo), rate)
     : null;
+
+  const totalActivo =
+    activo === null
+      ? 0
+      : series.reduce((a, s) => a + (s.puntos[activo]?.valor ?? 0), 0);
+  const nota =
+    solapa && detalle && !detalle.rate && detalle.total > totalActivo
+      ? `Suman ${entero(detalle.total)} y la barra ${entero(totalActivo)}: quien usó cupones de dos empresas cuenta en las dos.`
+      : undefined;
 
   return (
     <div className="mt-3 flex flex-col items-start gap-4 lg:flex-row">
@@ -308,6 +327,8 @@ export function GraficoSerie({
       {detalle ? (
         <TooltipUtm
           detalle={detalle}
+          mono={clavesMono}
+          nota={nota}
           estilo={
             activo! < meses.length / 2
               ? {
