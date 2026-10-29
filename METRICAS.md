@@ -1147,18 +1147,24 @@ AR y 34 en UY, exactamente lo que trae la fila mensual.
 ### La pestaña
 
 Las barras siguen el patrón de Exterior (§6 sexies): en TOTAL se parten por
-**plataforma**, y eligiendo AR o UY los **nuevos** se parten por **empresa**,
-con el panel del costado nombrando a todas sin agrupar una cola en "otras".
+**plataforma**, y eligiendo AR o UY se parten por **empresa**, con el panel del
+costado nombrando a todas sin agrupar una cola en "otras".
 
-Los **activos no se parten por empresa**, y no es por falta de ganas. Un
-paciente puede haber usado cupones de dos empresas y cuenta en las dos: en
-septiembre de 2026, sumar las 46 empresas de Uruguay da 373 activos contra 366
-personas distintas. Apilar eso daría una barra más alta que la tarjeta de
-arriba, que es lo que §8 prohíbe.
+**En los nuevos las franjas suman exacto**, y está medido: la diferencia entre
+la fila `TODAS` y la suma de las empresas es **cero en los veintiséis
+meses×plataforma** de la ventana. Se entra con el cupón de una sola empresa.
 
-Los nuevos no tienen ese problema y está medido: la diferencia entre la fila
-`TODAS` y la suma de las empresas es **cero en los veintiséis meses×plataforma**
-de la ventana. Se entra con el cupón de una sola empresa.
+**En los activos no.** Quien usó cupones de dos empresas cuenta en las dos: en
+septiembre de 2026, sumar las 46 empresas de Uruguay da 373 contra 366 personas
+distintas. Se apilan igual —decisión del dueño del producto el 2026-10-29— y la
+barra puede quedar por encima de la tarjeta.
+
+Es la única excepción a §8 en todo el tablero, y es deliberada: la alternativa
+era encoger las franjas para que entraran, y entonces ninguna diría el número
+real de su empresa. Se eligió que cada franja sea verdad sobre su empresa y que
+la barra no sea una suma de personas. **La tarjeta sigue contando personas**,
+desde las filas `TODAS`, y el pie del gráfico dice por qué las dos pueden no
+coincidir.
 
 La tabla mide **el rango que se está mirando**, no toda la historia. Con toda
 la historia, SiSi entraba al top con 20 pacientes aunque su último cupón es de
