@@ -113,6 +113,7 @@ export const EMPRESAS: Empresa[] = [
   { nombre: "On Point", porCodigo: ["#wellnessonpoint%"] },
   { nombre: "Advance", porCodigo: ["#bienestaradvance%"] },
   { nombre: "Universidad de los Andes", porCodigo: ["#alianzauandes%"] },
+  { nombre: "ICLOS", porCodigo: ["#iclos%"] },
 ];
 
 /** Lo que mira la pestaña: hay empresa detrás del cupón. */

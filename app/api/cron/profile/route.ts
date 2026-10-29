@@ -806,6 +806,56 @@ const PROBES: Record<string, string> = {
      WHERE ${sqlEmpresa()} <> '' AND pc.fecha >= '2025-09-01'
      GROUP BY 1 ORDER BY 1`,
 
+  // Cuánto de los "activos de empresa" es historia vieja.
+  //
+  // La pregunta que falta decidir es qué cuenta como activo de empresa, y esto
+  // la contesta con un número: de los que tuvieron sesión en septiembre y
+  // alguna vez usaron un cupón de empresa, cuántos lo usaron ESE mes y cuántos
+  // hace más de un año. Si la cola larga pesa, "alguna vez" no está midiendo
+  // el negocio de empresas de hoy, está midiendo el de 2023.
+  //
+  // Un mes cerrado y fijo, y el último cupón recortado al cierre del mes: así
+  // no se cuela un cupón de octubre para decidir qué era alguien en
+  // septiembre.
+  empresas_activos_antiguedad: `
+    SELECT CASE WHEN u.ultimo >= '2026-09-01' THEN 'a en el mes'
+                WHEN u.ultimo >= '2026-07-01' THEN 'b 1 a 3 meses antes'
+                WHEN u.ultimo >= '2025-10-01' THEN 'c 3 a 12 meses antes'
+                ELSE 'd mas de 12 meses antes' END AS desde_el_ultimo_cupon,
+           l.paisDominio AS pais,
+           COUNT(DISTINCT s.id_paciente) AS pacientes
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+      JOIN (SELECT pc.id_paciente, MAX(pc.fecha) AS ultimo
+              FROM pacientes_cupones pc
+              JOIN cupones c ON c.id = pc.id_cupon
+             WHERE ${sqlEmpresa()} <> '' AND pc.fecha < '2026-10-01'
+             GROUP BY pc.id_paciente) u
+        ON u.id_paciente = s.id_paciente
+     WHERE s.realizada = 1 AND l.paisDominio IN ('AR','UY')
+       AND s.fecha >= '2026-09-01' AND s.fecha < '2026-10-01'
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Y lo mismo por el lado de las empresas: cuántas siguen vivas.
+  //
+  // El mapeo cubre desde 2023, y una empresa que dejó de comprar en 2024 no
+  // tiene por qué aparecer en una tabla que dice "las más grandes". Esto
+  // decide si la tabla de la pestaña mide el rango que se está mirando o toda
+  // la historia.
+  empresas_vivas: `
+    SELECT CASE WHEN ultimo >= '2026-08-01' THEN 'a activa en los ultimos 3 meses'
+                WHEN ultimo >= '2025-11-01' THEN 'b en el ultimo ano'
+                ELSE 'c mas de un ano sin usarse' END AS estado,
+           COUNT(*) AS empresas, SUM(pacientes) AS pacientes
+      FROM (SELECT ${sqlEmpresa()} AS empresa,
+                   MAX(pc.fecha) AS ultimo,
+                   COUNT(DISTINCT pc.id_paciente) AS pacientes
+              FROM cupones c
+              JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+             GROUP BY 1
+            HAVING empresa <> '') e
+     GROUP BY 1 ORDER BY 1`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
