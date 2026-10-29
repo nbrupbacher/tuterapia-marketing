@@ -483,6 +483,101 @@ const PROBES: Record<string, string> = {
       FROM pacientes_cupones pc
      GROUP BY pc.id_cupon ORDER BY pacientes DESC LIMIT 25`,
 
+  // Los cupones más usados, con su nombre y su código.
+  //
+  // `cupones` no tiene ninguna columna de tipo —es id, codigo, nombre, pais,
+  // fecha, los límites, el porcentaje y activo— así que si business se
+  // distingue de promocional es por cómo se llaman. Esto es lo que decide si
+  // alcanza con una regla o hace falta una tabla de mapeo a mano.
+  //
+  // Son nombres de cupón, no de persona: lo que puede traer es el nombre de
+  // una empresa cliente, que es justo el dato que la pestaña necesitaría.
+  cupones_nombres: `
+    SELECT c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
+     ORDER BY pacientes DESC LIMIT 30`,
+
+  // Cuántos cupones distintos se usaron alguna vez, contra los 1.169 que
+  // existen: si son veinte, una tabla de mapeo es media hora de alguien.
+  cupones_cuantos: `
+    SELECT COUNT(*) AS cupones_que_existen,
+           COUNT(DISTINCT pc.id_cupon) AS usados_alguna_vez,
+           SUM(c.activo = 1) AS activos
+      FROM cupones c
+      LEFT JOIN pacientes_cupones pc ON pc.id_cupon = c.id`,
+
+  // La regla de negocio, dicha por el dueño del producto el 2026-10-29:
+  // business es TODO lo que no sea uno de estos, que son los promocionales y
+  // los que están activos hoy.
+  //
+  //   meanimo · terapia + un apellido · #fcyo:) · ffnic32026 ·
+  //   cuponespecialtt + lo que sea · 7años
+  //
+  // Se busca en `codigo` y en `nombre` porque todavía no se sabe cuál de las
+  // dos lleva eso, y el resultado lo dice. `7a%os%` en vez de `7años` para no
+  // depender de cómo esté codificada la ñ en la conexión.
+  cupones_clasificados: `
+    WITH usados AS (
+      SELECT c.id, c.codigo, c.nombre, c.activo,
+             COUNT(DISTINCT pc.id_paciente) AS pacientes
+        FROM cupones c
+        JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+       GROUP BY c.id, c.codigo, c.nombre, c.activo
+    )
+    SELECT CASE WHEN LOWER(codigo) LIKE 'meanimo%' OR LOWER(nombre) LIKE 'meanimo%'
+                  OR LOWER(codigo) LIKE 'terapia%' OR LOWER(nombre) LIKE 'terapia%'
+                  OR LOWER(codigo) LIKE '%fcyo%'   OR LOWER(nombre) LIKE '%fcyo%'
+                  OR LOWER(codigo) LIKE 'ffnic3%'  OR LOWER(nombre) LIKE 'ffnic3%'
+                  OR LOWER(codigo) LIKE 'cuponespecialtt%'
+                  OR LOWER(nombre) LIKE 'cuponespecialtt%'
+                  OR LOWER(codigo) LIKE '7a%os%'   OR LOWER(nombre) LIKE '7a%os%'
+                THEN 'promocional' ELSE 'business' END AS tipo,
+           COUNT(*) AS cupones,
+           SUM(pacientes) AS pacientes,
+           SUM(activo = 1) AS activos
+      FROM usados GROUP BY 1`,
+
+  // Los que la regla deja del lado de business, para mirarlos y ver si
+  // parecen nombres de empresa o si se coló un promocional que la lista no
+  // nombró.
+  cupones_business: `
+    SELECT c.codigo, c.nombre, c.pais, c.porcentaje, c.activo,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE NOT (LOWER(c.codigo) LIKE 'meanimo%' OR LOWER(c.nombre) LIKE 'meanimo%'
+             OR LOWER(c.codigo) LIKE 'terapia%' OR LOWER(c.nombre) LIKE 'terapia%'
+             OR LOWER(c.codigo) LIKE '%fcyo%'   OR LOWER(c.nombre) LIKE '%fcyo%'
+             OR LOWER(c.codigo) LIKE 'ffnic3%'  OR LOWER(c.nombre) LIKE 'ffnic3%'
+             OR LOWER(c.codigo) LIKE 'cuponespecialtt%'
+             OR LOWER(c.nombre) LIKE 'cuponespecialtt%'
+             OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%')
+     GROUP BY c.id, c.codigo, c.nombre, c.pais, c.porcentaje, c.activo
+     ORDER BY pacientes DESC LIMIT 30`,
+
+  // Y los que la regla marcó como promocionales, para confirmar que enganchó
+  // lo que tenía que enganchar y no de más.
+  cupones_promocionales: `
+    SELECT c.codigo, c.nombre, c.activo,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE LOWER(c.codigo) LIKE 'meanimo%' OR LOWER(c.nombre) LIKE 'meanimo%'
+        OR LOWER(c.codigo) LIKE 'terapia%' OR LOWER(c.nombre) LIKE 'terapia%'
+        OR LOWER(c.codigo) LIKE '%fcyo%'   OR LOWER(c.nombre) LIKE '%fcyo%'
+        OR LOWER(c.codigo) LIKE 'ffnic3%'  OR LOWER(c.nombre) LIKE 'ffnic3%'
+        OR LOWER(c.codigo) LIKE 'cuponespecialtt%'
+        OR LOWER(c.nombre) LIKE 'cuponespecialtt%'
+        OR LOWER(c.codigo) LIKE '7a%os%'   OR LOWER(c.nombre) LIKE '7a%os%'
+     GROUP BY c.id, c.codigo, c.nombre, c.activo
+     ORDER BY pacientes DESC LIMIT 30`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
