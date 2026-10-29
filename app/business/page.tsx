@@ -250,11 +250,13 @@ function Diario({
         datos={vista.diario}
         rate={false}
         titulo="Pacientes nuevos de empresa"
+        clavesMono={false}
       />
       <p className="mt-3 text-sm text-sec">
         El mismo número que la barra mensual de arriba, día por día. Son pocos
         por día —entre cero y unos pocos—, así que lo que se lee es el ritmo y
-        los huecos, no la altura de un día suelto.
+        los huecos, no la altura de un día suelto. Pasando el mouse por un día
+        se ven sus empresas.
       </p>
     </section>
   );

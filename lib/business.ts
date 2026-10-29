@@ -318,9 +318,12 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
  * partido por empresa y el de abajo por plataforma obligaría a recalibrar el
  * ojo entre uno y otro.
  *
- * `utm` va vacío: el tooltip por fuente es de General, donde la pregunta es de
- * qué campaña vino cada día. Acá la pregunta es de qué empresa, y eso ya está
- * en la franja.
+ * `utm` lleva las empresas de cada día, para el tooltip. En TOTAL las franjas
+ * son plataformas y la empresa no se ve en ningún lado; dentro de una
+ * plataforma sí son empresas, pero son más que los doce colores y la franja
+ * sola no dice cuál es. Una empresa con nuevos en AR y en UY el mismo día va
+ * en una sola fila. Las filas suman lo mismo que la barra porque un paciente
+ * entra con el cupón de una sola empresa.
  */
 function armarDiario(
   dias: FilaDia[],
@@ -348,5 +351,19 @@ function armarDiario(
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k);
 
-  return { barras, plataformas: esTotal ? claves.sort() : claves, utm: [] };
+  const empresas = new Map<string, Desglose["utm"][number]>();
+  for (const f of filas) {
+    const valor = Number(f.nuevos);
+    if (f.empresa === TODAS || valor === 0) continue;
+    const k = `${f.dia}|${f.empresa}`;
+    const punto = empresas.get(k);
+    if (punto) punto.valor += valor;
+    else empresas.set(k, { periodo: f.dia, clave: f.empresa, valor });
+  }
+
+  return {
+    barras,
+    plataformas: esTotal ? claves.sort() : claves,
+    utm: [...empresas.values()],
+  };
 }
