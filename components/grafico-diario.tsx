@@ -15,16 +15,20 @@ import type { Desglose } from "@/lib/desglose";
  *
  * Thin bars are hard to point at, so each day carries a full-height invisible
  * target the width of its slot: the pointer only has to be somewhere in the
- * column, not on the bar. The tooltip breaks the day down by raw utm_source.
+ * column, not on the bar. The tooltip breaks the day down by whatever
+ * `datos.utm` holds: raw utm_source in General, companies in Business.
  */
 export function GraficoDiario({
   datos,
   rate,
   titulo,
+  clavesMono = true,
 }: {
   datos: Desglose;
   rate: boolean;
   titulo: string;
+  /** Whether the tooltip's keys are codes (monospace) or plain names. */
+  clavesMono?: boolean;
 }) {
   const [activo, setActivo] = useState<number | null>(null);
 
@@ -169,6 +173,7 @@ export function GraficoDiario({
       {detalle ? (
         <TooltipUtm
           detalle={detalle}
+          mono={clavesMono}
           // Past the halfway mark the card flips to the left of the pointer so
           // it never runs off the edge.
           estilo={
