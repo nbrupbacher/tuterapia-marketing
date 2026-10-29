@@ -72,9 +72,19 @@ export function detalleDe(
 export function TooltipUtm({
   detalle,
   estilo,
+  mono = true,
+  nota,
 }: {
   detalle: Detalle;
   estilo: React.CSSProperties;
+  /**
+   * utm_source goes in monospace because it is a code someone typed. Other
+   * keys, like Business's company names, are plain words and read better in
+   * the body font.
+   */
+  mono?: boolean;
+  /** A line under the list, for when the rows need a caveat. */
+  nota?: string;
 }) {
   const valor = (v: number) => (detalle.rate ? porcentaje(v) : entero(v));
 
@@ -93,7 +103,11 @@ export function TooltipUtm({
       <ul className="mt-1.5 space-y-0.5">
         {detalle.filas.map((f) => (
           <li key={f.clave} className="flex items-baseline gap-2">
-            <span className="flex-1 truncate font-mono text-[11px] text-sec">
+            <span
+              className={`flex-1 truncate text-sec ${
+                mono ? "font-mono text-[11px]" : ""
+              }`}
+            >
               {f.clave}
             </span>
             <span className="tabular-nums text-texto">{valor(f.valor)}</span>
@@ -117,6 +131,12 @@ export function TooltipUtm({
           </li>
         ) : null}
       </ul>
+
+      {nota ? (
+        <p className="mt-1.5 border-t border-borde pt-1 text-[11px] text-ter">
+          {nota}
+        </p>
+      ) : null}
     </div>
   );
 }

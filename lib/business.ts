@@ -9,16 +9,16 @@ import type { Desglose } from "@/lib/desglose";
  * La pantalla no consulta MySQL nunca.
  *
  * Las barras siguen el patrón de Exterior: en TOTAL se parten por
- * **plataforma**, y con una plataforma elegida los **nuevos** se parten por
- * **empresa**.
+ * **plataforma**, y con una plataforma elegida se parten por **empresa**.
  *
- * Los activos no, y no es por falta de ganas. Un paciente puede haber usado
- * cupones de dos empresas y cuenta en las dos: en septiembre, sumar las 46
- * empresas de Uruguay da 373 activos contra 366 personas distintas. Apilar eso
- * daría una barra más alta que la tarjeta de al lado, que es exactamente lo
- * que METRICAS.md §8 prohíbe. Los nuevos no tienen ese problema —se midió: la
- * diferencia es cero en los veintiséis meses×plataforma— porque un paciente
- * entra con el cupón de una sola empresa.
+ * En los nuevos las franjas suman exacto: se midió y la diferencia es cero en
+ * los veintiséis meses×plataforma, porque un paciente entra con el cupón de
+ * una sola empresa. En los activos no: quien usó cupones de dos empresas
+ * cuenta en las dos, y en septiembre sumar las 46 empresas de Uruguay da 373
+ * contra 366 personas distintas. Se apilan igual, a pedido del dueño del
+ * producto el 2026-10-29, y la barra puede quedar más alta que la tarjeta.
+ * La tarjeta sigue contando personas desde las filas TODAS (METRICAS.md
+ * §6 septies).
  */
 
 /** La fila que trae el total del mes, ya deduplicado. */
@@ -41,7 +41,17 @@ export type FilaEmpresa = {
 export type VistaBusiness = {
   meses: string[];
   nuevos: SerieBusiness[];
+  /**
+   * Por plataforma en TOTAL, por empresa con una plataforma elegida. Por
+   * empresa puede sumar más que las personas: no usar para la tarjeta.
+   */
   activos: SerieBusiness[];
+  /**
+   * Los activos de cada mes por empresa, para el tooltip de la barra de
+   * activos. No suman la barra en TOTAL: quien usó cupones de dos empresas
+   * está en las dos.
+   */
+  activosEmpresa: Desglose["utm"];
   /** Las empresas del rango, de la más grande a la más chica. */
   empresas: FilaEmpresa[];
   /** Cuántas empresas distintas aparecieron en cada mes. */
@@ -128,25 +138,29 @@ export function armar(
   const meses = [...new Set(todas.map((f) => f.mes))].sort();
   const mesEnCurso = meses[meses.length - 1];
 
-  // Las barras usan SOLO las filas TODAS: son el total del mes ya
-  // deduplicado. Sumar las empresas contaría dos veces a alguien que usó
-  // cupones de dos.
+  // Las filas TODAS son el total del mes ya deduplicado. Sumar las empresas
+  // contaría dos veces a alguien que usó cupones de dos.
   const totalesPorPlataforma = filas.filter((f) => f.empresa === TODAS);
   const deEmpresas = filas.filter((f) => f.empresa !== TODAS);
 
-  // Con una plataforma elegida, los nuevos se abren por empresa. En TOTAL no:
+  // Con una plataforma elegida, las barras se abren por empresa. En TOTAL no:
   // ahí la pregunta es cuánto pesa cada plataforma, y mezclar las empresas de
   // las dos en una sola barra no contesta ninguna de las dos cosas.
   const nuevos = esTotal
     ? serie(totalesPorPlataforma, meses, (f) => f.pais, (f) => Number(f.nuevos))
     : serie(deEmpresas, meses, (f) => f.empresa, (f) => Number(f.nuevos));
 
-  const activos = serie(
+  // Las personas activas, siempre de las filas TODAS. Es lo que cuenta la
+  // tarjeta, aunque la barra se abra por empresa y sume más.
+  const activosPersonas = serie(
     totalesPorPlataforma,
     meses,
     (f) => f.pais,
     (f) => Number(f.activos),
   );
+  const activos = esTotal
+    ? activosPersonas
+    : serie(deEmpresas, meses, (f) => f.empresa, (f) => Number(f.activos));
 
   // El último mes CERRADO, no el último a secas.
   const cerrados = meses.filter((m) => m !== mesEnCurso);
@@ -173,6 +187,13 @@ export function armar(
     meses,
     nuevos,
     activos,
+    activosEmpresa: porEmpresa(
+      deEmpresas.map((f) => ({
+        periodo: f.mes,
+        empresa: f.empresa,
+        valor: Number(f.activos),
+      })),
+    ),
     empresas: armarEmpresas(deEmpresas),
     porMes: meses.map((m) => ({
       mes: m,
@@ -188,8 +209,8 @@ export function armar(
     resumen: {
       nuevos: sumaDe(nuevos, mes),
       nuevosPrevio: sumaDe(nuevos, mesPrevio),
-      activos: sumaDe(activos, mes),
-      activosPrevio: sumaDe(activos, mesPrevio),
+      activos: sumaDe(activosPersonas, mes),
+      activosPrevio: sumaDe(activosPersonas, mesPrevio),
       mes,
       mesPrevio,
     },
@@ -311,6 +332,27 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
 }
 
 /**
+ * Las filas de empresa en la forma del tooltip, una por período y empresa.
+ *
+ * En TOTAL una empresa con pacientes en AR y en UY trae dos filas por
+ * período; acá se juntan en una, porque el tooltip pregunta de qué empresa y
+ * no de qué plataforma.
+ */
+function porEmpresa(
+  filas: { periodo: string; empresa: string; valor: number }[],
+): Desglose["utm"] {
+  const por = new Map<string, Desglose["utm"][number]>();
+  for (const f of filas) {
+    if (f.empresa === TODAS || f.valor === 0) continue;
+    const k = `${f.periodo}|${f.empresa}`;
+    const punto = por.get(k);
+    if (punto) punto.valor += f.valor;
+    else por.set(k, { periodo: f.periodo, clave: f.empresa, valor: f.valor });
+  }
+  return [...por.values()];
+}
+
+/**
  * Los últimos días, en la forma que espera `GraficoDiario`.
  *
  * Se parte igual que la barra mensual —por plataforma en TOTAL, por empresa
@@ -318,9 +360,11 @@ function armarEmpresas(filas: Fila[]): FilaEmpresa[] {
  * partido por empresa y el de abajo por plataforma obligaría a recalibrar el
  * ojo entre uno y otro.
  *
- * `utm` va vacío: el tooltip por fuente es de General, donde la pregunta es de
- * qué campaña vino cada día. Acá la pregunta es de qué empresa, y eso ya está
- * en la franja.
+ * `utm` lleva las empresas de cada día, para el tooltip. En TOTAL las franjas
+ * son plataformas y la empresa no se ve en ningún lado; dentro de una
+ * plataforma sí son empresas, pero son más que los doce colores y la franja
+ * sola no dice cuál es. Las filas suman lo mismo que la barra porque un
+ * paciente entra con el cupón de una sola empresa.
  */
 function armarDiario(
   dias: FilaDia[],
@@ -348,5 +392,15 @@ function armarDiario(
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k);
 
-  return { barras, plataformas: esTotal ? claves.sort() : claves, utm: [] };
+  return {
+    barras,
+    plataformas: esTotal ? claves.sort() : claves,
+    utm: porEmpresa(
+      filas.map((f) => ({
+        periodo: f.dia,
+        empresa: f.empresa,
+        valor: Number(f.nuevos),
+      })),
+    ),
+  };
 }
