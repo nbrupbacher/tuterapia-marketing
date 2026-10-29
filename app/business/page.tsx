@@ -17,14 +17,13 @@ export const dynamic = "force-dynamic";
  * Business: los pacientes que llegan con el cupón de una empresa.
  *
  * El patrón de Exterior: en TOTAL las barras se parten por plataforma, y
- * eligiendo AR o UY los **nuevos** se parten por empresa.
+ * eligiendo AR o UY se parten por empresa, tanto los nuevos como los activos.
  *
- * Los activos se quedan por plataforma. Un paciente puede haber usado cupones
- * de dos empresas y cuenta en las dos, así que apilarlos daría una barra más
- * alta que la tarjeta: en septiembre, 373 contra 366 personas. Los nuevos no
- * tienen ese problema porque se entra con el cupón de una sola empresa. Las
- * empresas de los activos van en el tooltip, que puede sumar más que la barra
- * y lo dice.
+ * En los activos las franjas pueden sumar más que la tarjeta: un paciente que
+ * usó cupones de dos empresas cuenta en las dos (en septiembre, 373 contra 366
+ * personas). Lo eligió el dueño del producto sobre achicar las franjas, y el
+ * pie lo avisa. Los nuevos no tienen ese problema porque se entra con el cupón
+ * de una sola empresa.
  */
 
 /**
@@ -75,6 +74,7 @@ export function PantallaBusiness({
   pais: string;
 }) {
   const esTotal = pais === "TOTAL";
+  const corte = esTotal ? "por plataforma" : `plataforma ${pais}, por empresa`;
 
   if (vista.vacia) {
     return (
@@ -99,9 +99,7 @@ export function PantallaBusiness({
       <Tarjetas vista={vista} pais={pais} />
 
       <Bloque
-        titulo={`Pacientes nuevos de empresa · ${
-          esTotal ? "por plataforma" : `plataforma ${pais}, por empresa`
-        }`}
+        titulo={`Pacientes nuevos de empresa · ${corte}`}
         series={aSeries(vista.nuevos, esTotal)}
         pais={pais}
         pie={
@@ -115,10 +113,15 @@ export function PantallaBusiness({
       <Diario vista={vista} esTotal={esTotal} pais={pais} />
 
       <Bloque
-        titulo="Pacientes activos de empresa · por plataforma"
-        series={aSeries(vista.activos, true)}
+        titulo={`Pacientes activos de empresa · ${corte}`}
+        series={aSeries(vista.activos, esTotal)}
         pais={pais}
-        pie="Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. Pasando el mouse por un mes se ven sus empresas. La barra no se abre por empresa: alguien que usó cupones de dos cuenta en las dos, y la barra quedaría más alta que la tarjeta de arriba."
+        pie={
+          esTotal
+            ? "Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. Pasando el mouse por un mes se ven sus empresas; eligiendo AR o UY arriba, la barra se abre por empresa."
+            : "Activo de empresa es el que hizo una sesión en el mes y ya tenía un cupón de empresa al cierre de ese mes. La barra suma las empresas y puede quedar un poco más alta que la tarjeta de arriba, que cuenta personas: quien usó cupones de dos empresas está en las dos franjas."
+        }
+        recorte={esTotal ? undefined : SIN_AGRUPAR}
         utm={vista.activosEmpresa}
         solapa
       />
