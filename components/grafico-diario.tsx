@@ -87,11 +87,37 @@ export function GraficoDiario({
         className="h-[156px] w-full"
         onMouseLeave={() => setActivo(null)}
       >
+        {/* El piso del gráfico.
+            Sin él, un día en cero no dibuja nada y queda un hueco, que no
+            dice "cero": dice "no sé". Y tres huecos seguidos no se pueden
+            contar. Con el piso y su marquita, los días vacíos se cuentan de
+            un vistazo. */}
+        <line
+          x1={0}
+          y1={alto}
+          x2={ancho}
+          y2={alto}
+          className="stroke-dim"
+          strokeWidth={1}
+          opacity={0.25}
+        />
+
         {fechas.map((fecha, i) => {
           const centro = i * paso + paso / 2;
           let acumulado = 0;
           return (
             <g key={fecha}>
+              {totales[i] === 0 ? (
+                <rect
+                  x={centro - anchoBarra / 2}
+                  y={alto - 2}
+                  width={anchoBarra}
+                  height={2}
+                  rx={1}
+                  className="fill-dim"
+                  opacity={activo === null || activo === i ? 1 : 0.35}
+                />
+              ) : null}
               {datos.plataformas.map((plataforma, pi) => {
                 const valor = porFecha.get(fecha)?.get(plataforma) ?? 0;
                 if (valor === 0) return null;
@@ -125,7 +151,22 @@ export function GraficoDiario({
             está cuando lo buscás. El día apuntado se enciende. */}
         {fechas.map((fecha, i) => {
           const total = totales[i]!;
-          if (total === 0) return null;
+          // El cero se escribe solo en el día apuntado. La marquita del piso
+          // ya dice que hubo cero; cuarenta ceros impresos taparían la forma,
+          // que es lo que el gráfico vino a mostrar.
+          if (total === 0) {
+            return activo === i ? (
+              <text
+                key={`n-${fecha}`}
+                x={i * paso + paso / 2}
+                y={alto - 6}
+                textAnchor="middle"
+                className="text-[10px] fill-ter"
+              >
+                0
+              </text>
+            ) : null;
+          }
           return (
             <text
               key={`n-${fecha}`}
