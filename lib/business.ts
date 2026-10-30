@@ -144,6 +144,7 @@ export function armar(
   totales: { mes: string; pacientes_nuevos: string | null }[],
   pais = "TOTAL",
   dias: FilaDia[] = [],
+  hoy = new Date(),
 ): VistaBusiness {
   const esTotal = pais === "TOTAL";
   const filas = esTotal ? todas : todas.filter((f) => f.pais === pais);
@@ -226,7 +227,7 @@ export function armar(
       mes,
       mesPrevio,
     },
-    diario: armarDiario(dias, esTotal, pais),
+    diario: armarDiario(dias, esTotal, pais, hoy),
     parte: {
       empresa: empresaDelMes,
       total:
@@ -410,6 +411,7 @@ function armarDiario(
   dias: FilaDia[],
   esTotal: boolean,
   pais: string,
+  hoy = new Date(),
 ): Desglose {
   const filas = esTotal ? dias : dias.filter((f) => f.pais === pais);
   const deInteres = esTotal
@@ -432,6 +434,24 @@ function armarDiario(
     .sort((a, b) => b[1] - a[1])
     .map(([k]) => k);
 
+  // Un día sin ningún paciente nuevo no deja fila, y el gráfico arma su eje
+  // con los días que recibe. Sin esto, un día en cero no se dibuja como cero:
+  // desaparece. Eso hacía dos cosas feas a la vez —el 25, 26, 27 y 29 quedaban
+  // pegados como si fueran consecutivos, y con UY elegido el gráfico terminaba
+  // el 27 y parecía que el tablero estaba desactualizado—.
+  //
+  // Así que el eje lo pone el calendario: todos los días desde el primero que
+  // hay guardado hasta ayer, con un cero invisible donde no hubo nadie.
+  const primero = dias.map((f) => f.dia).sort()[0];
+  if (primero && claves.length > 0) {
+    const conDato = new Set(barras.map((b) => b.periodo));
+    for (const dia of calendario(primero, ayerLocal(hoy))) {
+      if (!conDato.has(dia)) {
+        barras.push({ periodo: dia, clave: claves[0]!, valor: 0 });
+      }
+    }
+  }
+
   return {
     barras,
     plataformas: esTotal ? claves.sort() : claves,
@@ -443,4 +463,23 @@ function armarDiario(
       })),
     ),
   };
+}
+
+/** Ayer, en día local (UTC−3): el último día completo que se puede dibujar. */
+function ayerLocal(hoy: Date): string {
+  const d = new Date(hoy.getTime() - 3 * 3_600_000);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Todos los días entre dos fechas 'YYYY-MM-DD', inclusive. */
+function calendario(desde: string, hasta: string): string[] {
+  const dias: string[] = [];
+  const d = new Date(`${desde}T00:00:00Z`);
+  const fin = new Date(`${hasta}T00:00:00Z`);
+  while (d <= fin) {
+    dias.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dias;
 }
