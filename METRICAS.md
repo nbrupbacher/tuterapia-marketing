@@ -1578,7 +1578,31 @@ create table marketing.exterior_utm (
   nuevos     int  not null,
   primary key (mes, pais, utm_source)
 );
+
+create table marketing.exterior_diario (
+  fecha      date not null,
+  pais       text not null,  -- plataforma: login.paisDominio
+  origen     text not null,  -- país del perfil, ISO2, o '??'
+  utm_source text not null,  -- crudo; vacío = se registró sin utm
+  nuevos     int  not null,  -- primer pago del día, en U$S
+  primary key (fecha, pais, origen, utm_source)
+);
 ```
+
+El diario, 45 días, lleva las **dos dimensiones en la misma fila**, al revés
+que la mensual. Arriba están separadas porque `activos` no se puede cruzar con
+utm sin contar a alguien dos veces; en el diario no hay activos, así que el
+cruce es seguro y el tooltip puede contestar las dos preguntas de la pestaña a
+la vez: de dónde es la persona y de dónde vino.
+
+Solo nuevos, por lo mismo que en Business (§6 septies): "sesión en el mes de
+alguien que alguna vez pagó en dólares" tiene el mes adentro de la definición y
+no tiene versión diaria.
+
+Medido el 2026-11-01: 29 pacientes en 22 días con alguien sobre 42, así que la
+mayoría de los días están en cero. Por eso el gráfico diario dibuja esos días
+como ceros con su marca en el piso y no como huecos — si no, el eje se cierra
+sobre los días vacíos y los que quedan se leen como consecutivos.
 
 `marketing.cohorte_sesiones` se queda donde está, con la cohorte de registro
 mensual: de ahí sale la exportación de cohorte (`/api/funnel/csv`). Son dos
