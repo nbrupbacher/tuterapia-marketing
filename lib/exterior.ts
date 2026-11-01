@@ -1,6 +1,7 @@
 import { withDb } from "@/lib/db";
 import { PAISES_REALES, type Rango } from "@/lib/dashboard";
 import { bandera } from "@/lib/ui/format";
+import type { Desglose } from "@/lib/desglose";
 
 /**
  * La pestaña Exterior: los pacientes que pagan en dólares.
@@ -61,8 +62,18 @@ export type VistaExterior = {
   /** Pacientes nuevos del exterior y del total, para la parte que representan. */
   parte: { exterior: number; total: number; mes: string | null };
   utm: FuenteUtm[];
+  /** Los últimos 45 días, entre las dos mensuales. Solo nuevos. */
+  diario: Desglose;
   /** Si no hay una sola fila: el cron todavía no corrió. */
   vacia: boolean;
+};
+
+type FilaDia = {
+  dia: string;
+  pais: string;
+  origen: string;
+  utm_source: string;
+  nuevos: string;
 };
 
 type FilaMensual = {
@@ -80,7 +91,7 @@ export async function leerExterior(
   const esTotal = pais === "TOTAL";
 
   return withDb(async (db) => {
-    const [mensual, utm, totales] = await Promise.all([
+    const [mensual, utm, totales, diario] = await Promise.all([
       db.query<FilaMensual>(
         // Sin filtrar por plataforma a propósito: las series se filtran al
         // armarlas, pero la tarjeta de "parte de los pacientes nuevos" mide el
@@ -114,9 +125,22 @@ export async function leerExterior(
           order by mes desc limit $1`,
         [meses],
       ),
+      db.query<FilaDia>(
+        `select to_char(fecha, 'YYYY-MM-DD') as dia, pais, origen, utm_source,
+                nuevos::text
+           from marketing.exterior_diario
+          order by fecha`,
+      ),
     ]);
 
-    return armar(mensual.rows, utm.rows, totales.rows, esTotal, pais);
+    return armar(
+      mensual.rows,
+      utm.rows,
+      totales.rows,
+      esTotal,
+      pais,
+      diario.rows,
+    );
   });
 }
 
@@ -133,6 +157,8 @@ export function armar(
   totales: { mes: string; pacientes_nuevos: string | null }[],
   esTotal: boolean,
   pais = "TOTAL",
+  dias: FilaDia[] = [],
+  hoy = new Date(),
 ): VistaExterior {
   // Los gráficos miran la plataforma elegida; la tarjeta de "parte" mira todo.
   const filas = esTotal ? todas : todas.filter((f) => f.pais === pais);
@@ -193,6 +219,7 @@ export function armar(
       mes,
     },
     utm: armarUtm(utmFilas),
+    diario: armarDiario(dias, esTotal, pais, hoy),
     vacia: todas.length === 0,
   };
 }
@@ -300,4 +327,95 @@ function armarUtm(
       if (b.fuente === "Sin utm") return 1;
       return b.total - a.total;
     });
+}
+
+/**
+ * Los últimos días, en la forma que espera `GraficoDiario`.
+ *
+ * Las barras se parten como las mensuales —por plataforma en TOTAL, por país
+ * del paciente adentro de una— para que arriba y abajo se lean igual.
+ *
+ * El tooltip, en cambio, muestra **país y utm juntos** en cada fila: de dónde
+ * es la persona y de dónde vino. Son las dos preguntas de esta pestaña y en el
+ * diario se pueden cruzar sin contar a nadie dos veces, porque acá no hay
+ * activos.
+ */
+function armarDiario(
+  dias: FilaDia[],
+  esTotal: boolean,
+  pais: string,
+  hoy: Date,
+): Desglose {
+  const filas = esTotal ? dias : dias.filter((f) => f.pais === pais);
+
+  const total = new Map<string, number>();
+  const porClave = new Map<string, number>();
+  const porDetalle = new Map<string, number>();
+
+  for (const f of filas) {
+    const valor = Number(f.nuevos);
+    if (valor === 0) continue;
+
+    const clave = esTotal ? f.pais : etiquetaOrigen(f.origen);
+    total.set(clave, (total.get(clave) ?? 0) + valor);
+    porClave.set(`${f.dia}|${clave}`, (porClave.get(`${f.dia}|${clave}`) ?? 0) + valor);
+
+    const detalle = `${etiquetaOrigen(f.origen)} · ${
+      f.utm_source === "" ? "sin utm" : f.utm_source
+    }`;
+    porDetalle.set(
+      `${f.dia}|${detalle}`,
+      (porDetalle.get(`${f.dia}|${detalle}`) ?? 0) + valor,
+    );
+  }
+
+  const barras = [...porClave.entries()].map(([k, valor]) => {
+    const [periodo, clave] = k.split("|");
+    return { periodo: periodo!, clave: clave!, valor };
+  });
+
+  const claves = [...total.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
+
+  // Un día sin nadie no deja fila, y el gráfico arma su eje con los días que
+  // recibe: sin esto el día vacío desaparece en vez de dibujarse como cero, y
+  // los días que quedan se pegan como si fueran consecutivos.
+  const primero = dias.map((f) => f.dia).sort()[0];
+  if (primero && claves.length > 0) {
+    const conDato = new Set(barras.map((b) => b.periodo));
+    for (const dia of calendarioHasta(primero, ayerLocal(hoy))) {
+      if (!conDato.has(dia)) {
+        barras.push({ periodo: dia, clave: claves[0]!, valor: 0 });
+      }
+    }
+  }
+
+  return {
+    barras,
+    plataformas: esTotal ? claves.sort() : claves,
+    utm: [...porDetalle.entries()].map(([k, valor]) => {
+      const [periodo, clave] = k.split("|");
+      return { periodo: periodo!, clave: clave!, valor };
+    }),
+  };
+}
+
+/** Ayer, en día local (UTC−3): el último día completo que se puede dibujar. */
+function ayerLocal(hoy: Date): string {
+  const d = new Date(hoy.getTime() - 3 * 3_600_000);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Todos los días entre dos fechas 'YYYY-MM-DD', inclusive. */
+function calendarioHasta(desde: string, hasta: string): string[] {
+  const dias: string[] = [];
+  const d = new Date(`${desde}T00:00:00Z`);
+  const fin = new Date(`${hasta}T00:00:00Z`);
+  while (d <= fin) {
+    dias.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dias;
 }

@@ -160,3 +160,63 @@ function normalizar(r: {
 }): FilaExterior {
   return { mes: r.mes, pais: r.pais, origen: r.origen, n: Number(r.n) };
 }
+
+export type FilaDiariaExterior = {
+  dia: string;
+  pais: string;
+  origen: string;
+  utm_source: string;
+  n: number;
+};
+
+/**
+ * Los mismos pacientes nuevos del exterior, pero por día y con las dos
+ * dimensiones en la misma fila.
+ *
+ * Solo nuevos: los activos no tienen versión diaria que signifique algo —son
+ * "sesión en el mes de alguien que alguna vez pagó en dólares"—.
+ *
+ * País del perfil y utm juntos a propósito: el tooltip del gráfico muestra de
+ * dónde es la persona y de dónde vino, y con las dos en filas separadas no se
+ * podrían cruzar. Acá el cruce es seguro porque no hay activos que sumar dos
+ * veces.
+ *
+ * El día es el LOCAL (UTC−3), como en Movimientos y en Business.
+ */
+export async function nuevosDelExteriorPorDia(
+  conn: Connection,
+  rango: Rango,
+): Promise<FilaDiariaExterior[]> {
+  const [rows] = await conn.query<
+    (RowDataPacket & {
+      dia: string;
+      pais: string;
+      origen: string;
+      utm_source: string;
+      n: number;
+    })[]
+  >(
+    `SELECT DATE(DATE_SUB(pp.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR)) AS dia,
+            l.paisDominio AS pais,
+            COALESCE(NULLIF(p.pais, ''), '??') AS origen,
+            COALESCE(l.utm_source, '') AS utm_source,
+            COUNT(DISTINCT pp.id_paciente) AS n
+       FROM pacientes_pagos pp
+       JOIN (${PRIMER_PAGO_PROPIO}) f
+         ON f.id_paciente = pp.id_paciente AND f.primera = pp.creacion
+       JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+       JOIN pacientes p ON p.id_login = l.id
+      WHERE pp.confirmado = 1 AND pp.moneda = 'U$S'
+        AND l.paisDominio IN ('AR', 'UY')
+        AND pp.creacion >= ? AND pp.creacion < ?
+      GROUP BY 1, 2, 3, 4`,
+    [rango.start, rango.end],
+  );
+  return rows.map((r) => ({
+    dia: String(r.dia).slice(0, 10),
+    pais: r.pais,
+    origen: r.origen,
+    utm_source: r.utm_source,
+    n: Number(r.n),
+  }));
+}

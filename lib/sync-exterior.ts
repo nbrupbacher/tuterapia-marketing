@@ -5,7 +5,9 @@ import {
   nuevosDelExterior,
   activosDelExterior,
   utmDelExterior,
+  nuevosDelExteriorPorDia,
 } from "@/lib/queries/exterior";
+import { ultimosDias } from "@/lib/queries/diarias";
 import { transaction } from "@/lib/db";
 
 /**
@@ -35,6 +37,12 @@ import { transaction } from "@/lib/db";
  */
 export const MESES_DE_EXTERIOR = 13;
 
+/**
+ * Y cuántos días el grano diario: los mismos 45 que Movimientos y Business,
+ * para que las tres pestañas muestren la misma ventana.
+ */
+export const DIAS_DE_EXTERIOR = 45;
+
 export async function sincronizarExterior(
   mysql: Connection,
   db: Client,
@@ -48,10 +56,11 @@ export async function sincronizarExterior(
     end: monthRangeUtc(hasta).end,
   };
 
-  const [nuevos, activos, utm] = await Promise.all([
+  const [nuevos, activos, utm, diarias] = await Promise.all([
     nuevosDelExterior(mysql, rango),
     activosDelExterior(mysql, rango),
     utmDelExterior(mysql, rango),
+    nuevosDelExteriorPorDia(mysql, ultimosDias(DIAS_DE_EXTERIOR, ahora)),
   ]);
 
   // Las dos series se cruzan en una fila por (mes, plataforma, origen): un mes
@@ -98,9 +107,30 @@ export async function sincronizarExterior(
         [`${f.mes}-01`, f.pais, f.utm_source, f.n],
       );
     }
+
+    // El diario, con el mismo criterio de borrar y reescribir la ventana.
+    await db.query(
+      `delete from marketing.exterior_diario where fecha >= $1::date`,
+      [desdeDia(ahora)],
+    );
+    for (const f of diarias) {
+      await db.query(
+        `insert into marketing.exterior_diario
+           (fecha, pais, origen, utm_source, nuevos)
+         values ($1, $2, $3, $4, $5)`,
+        [f.dia, f.pais, f.origen, f.utm_source, f.n],
+      );
+    }
   });
 
-  return filas.size + utm.length;
+  return filas.size + utm.length + diarias.length;
+}
+
+/** El primer día de la ventana diaria, en día local (UTC−3). */
+function desdeDia(ahora: Date): string {
+  const d = new Date(ahora.getTime() - 3 * 3_600_000);
+  d.setUTCDate(d.getUTCDate() - (DIAS_DE_EXTERIOR - 1));
+  return d.toISOString().slice(0, 10);
 }
 
 /** 'YYYY-MM' del mes en curso, en día local (UTC−3). */

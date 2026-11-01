@@ -1,5 +1,6 @@
 import { Nav, Selectores, contexto } from "@/components/nav";
 import { GraficoSerie, type Serie } from "@/components/grafico-serie";
+import { GraficoDiario } from "@/components/grafico-diario";
 import { identidadDe } from "@/components/identidad";
 import {
   leerExterior,
@@ -119,6 +120,8 @@ export function PantallaExterior({
         recorte={esTotal ? undefined : SIN_AGRUPAR}
       />
 
+      <Diario vista={vista} esTotal={esTotal} pais={pais} />
+
       <Bloque
         titulo={`Pacientes activos del exterior · ${
           esTotal ? "por plataforma" : `plataforma ${pais}, por país`
@@ -191,6 +194,51 @@ function Tarjetas({ vista, pais }: { vista: VistaExterior; pais: string }) {
         tono="text-sec"
       />
     </div>
+  );
+}
+
+/**
+ * Los últimos 45 días, entre las dos mensuales.
+ *
+ * Va en el medio a pedido del dueño del producto: la de arriba dice cuántos
+ * entraron en el mes y esta dice cuándo, que con veinte o treinta por mes es
+ * la diferencia entre un número y un patrón.
+ *
+ * Solo nuevos. Los activos no tienen versión diaria que signifique algo: son
+ * "sesión en el mes, de alguien que alguna vez pagó en dólares".
+ *
+ * El tooltip muestra el país del perfil y el utm juntos, que son las dos
+ * preguntas de la pestaña: de dónde es y de dónde vino.
+ */
+function Diario({
+  vista,
+  esTotal,
+  pais,
+}: {
+  vista: VistaExterior;
+  esTotal: boolean;
+  pais: string;
+}) {
+  if (vista.diario.barras.length === 0) return null;
+
+  return (
+    <section className="mt-8">
+      <h2 className="text-xs uppercase tracking-wide text-ter">
+        Pacientes nuevos del exterior ·{" "}
+        {esTotal ? "por plataforma" : `plataforma ${pais}, por país`} · 45 días
+      </h2>
+      <GraficoDiario
+        datos={vista.diario}
+        rate={false}
+        titulo="Pacientes nuevos del exterior"
+      />
+      <p className="mt-3 text-sm text-sec">
+        El mismo número que la barra de arriba, día por día. Pasando el mouse,
+        cada día se abre por país del perfil y utm. Son pocos por día, así que
+        lo que se lee es el ritmo y los huecos: los días sin nadie llevan su
+        marca en el piso.
+      </p>
+    </section>
   );
 }
 
