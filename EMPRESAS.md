@@ -192,3 +192,19 @@ su cupón se llama "Fraylog (Pase Libre)".
 Para que un cupón nuevo no desaparezca de los números, la sonda
 `empresas_sin_mapear` lista los que empiezan con `#` y no cayeron en ninguna
 empresa. Hoy ahí tienen que quedar solo las campañas y `#practicante`.
+
+El error contrario —un cupón que cae en una empresa que no es la suya— lo
+busca `empresas_cupones`: el **código** de cada cupón de cada empresa, con su
+primer y último uso. Códigos y no nombres, porque un código suelto es opaco y
+un nombre suelto puede ser el de un paciente. Lo que delata un match malo son
+las fechas: un cupón que arranca mucho antes que el resto de su empresa no es
+de esa empresa. Así salió Bosch, que matcheaba `%bosch%` contra el nombre y se
+llevaba un cupón nominal de 2024 cuando la empresa arrancó en mayo de 2026.
+
+**Corrida del 2026-11-02**: 503 cupones en 69 empresas, ninguno más con esa
+forma. Los sospechosos por cantidad de cupones resultaron familias de cupón
+por persona y todos llevan la empresa en el código: ISA (16), Securitas (10),
+INTERFASE (7) y Movigroup (4), más Fosmetal (290) y Farmashop (76), que ya se
+sabían. Fuera de Uruguay quedan diez cupones en Argentina —Galicia, USAL,
+Pilay, Coderhouse, Big Cheese, December Labs, Flix, Maslow y Advance— y tres
+en Chile, que el tablero no mira.
