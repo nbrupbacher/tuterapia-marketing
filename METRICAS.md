@@ -1018,6 +1018,16 @@ octubre — un mes escrito una sola vez quedaría corto para siempre.
 Se reescribe una ventana de 13 meses en cada corrida. Son tres consultas
 agrupadas y el job cierra en cuatro segundos.
 
+Cada corrida **borra la tabla entera** y la vuelve a escribir, no solo desde el
+principio de la ventana. Borrar desde el principio deja congelada la fila del
+mes que se acaba de caer de la ventana, con el valor —y el mapeo de empresas—
+del día en que se escribió, y ya nunca se vuelve a tocar. Se vio arreglando
+Bosch el 2026-11-02: la fila mala de Argentina sobrevivió al arreglo porque ya
+estaba fuera de los trece meses que se reescribían. Vale para las seis tablas
+de ventana móvil: `business_mensual`, `business_diario`, `business_revenue`,
+`exterior_mensual`, `exterior_utm` y `exterior_diario`. No vale para las del
+funnel, que son historia acumulada y se borran por rango a propósito.
+
 **Se guardan y se muestran todos los orígenes.** No hay franja "resto": cada
 país es su propia franja, con su banderita y su código ISO al lado. Son menos
 de los que parece — el rango entero junta 22 países en Argentina y 15 en

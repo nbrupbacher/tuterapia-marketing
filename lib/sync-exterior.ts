@@ -82,10 +82,13 @@ export async function sincronizarExterior(
     // Se borra y se reescribe la ventana en vez de hacer upsert: un país que
     // deja de aparecer un mes tiene que desaparecer de la fila, y un upsert lo
     // dejaría ahí con el valor viejo. Es el mismo criterio que usa el funnel.
-    await db.query(
-      `delete from marketing.exterior_mensual where mes >= $1::date`,
-      [`${desde}-01`],
-    );
+    //
+    // Las tres tablas se borran enteras y no desde el principio de la
+    // ventana: la tabla ES la ventana, y una fila que se cae de ella al
+    // cambiar el mes no se vuelve a tocar nunca más —queda congelada con el
+    // valor del día que se escribió—. En el diario eso además se veía, porque
+    // se lee sin filtro de fecha.
+    await db.query(`delete from marketing.exterior_mensual`);
     for (const [clave, v] of filas) {
       const [mes, pais, origen] = clave.split("|");
       await db.query(
@@ -96,10 +99,7 @@ export async function sincronizarExterior(
       );
     }
 
-    await db.query(
-      `delete from marketing.exterior_utm where mes >= $1::date`,
-      [`${desde}-01`],
-    );
+    await db.query(`delete from marketing.exterior_utm`);
     for (const f of utm) {
       await db.query(
         `insert into marketing.exterior_utm (mes, pais, utm_source, nuevos)
@@ -109,10 +109,7 @@ export async function sincronizarExterior(
     }
 
     // El diario, con el mismo criterio de borrar y reescribir la ventana.
-    await db.query(
-      `delete from marketing.exterior_diario where fecha >= $1::date`,
-      [desdeDia(ahora)],
-    );
+    await db.query(`delete from marketing.exterior_diario`);
     for (const f of diarias) {
       await db.query(
         `insert into marketing.exterior_diario
@@ -124,13 +121,6 @@ export async function sincronizarExterior(
   });
 
   return filas.size + utm.length + diarias.length;
-}
-
-/** El primer día de la ventana diaria, en día local (UTC−3). */
-function desdeDia(ahora: Date): string {
-  const d = new Date(ahora.getTime() - 3 * 3_600_000);
-  d.setUTCDate(d.getUTCDate() - (DIAS_DE_EXTERIOR - 1));
-  return d.toISOString().slice(0, 10);
 }
 
 /** 'YYYY-MM' del mes en curso, en día local (UTC−3). */

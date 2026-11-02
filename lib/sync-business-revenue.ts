@@ -52,11 +52,10 @@ export async function sincronizarRevenueBusiness(
 
   await transaction(db, async () => {
     // Borrar y reescribir la ventana, como business_mensual: una empresa que
-    // deja de aparecer un mes tiene que desaparecer de ese mes.
-    await db.query(
-      `delete from marketing.business_revenue where mes >= $1::date`,
-      [`${desde}-01`],
-    );
+    // deja de aparecer un mes tiene que desaparecer de ese mes. Y sin cota
+    // inferior, por lo mismo: la tabla es la ventana, y una fila que se cae
+    // de ella no se vuelve a tocar nunca.
+    await db.query(`delete from marketing.business_revenue`);
     for (const f of filas) {
       await db.query(
         `insert into marketing.business_revenue

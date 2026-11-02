@@ -82,10 +82,13 @@ export async function sincronizarBusiness(
     // Se borra y se reescribe la ventana en vez de hacer upsert: una empresa
     // que deja de aparecer un mes tiene que desaparecer de la fila, y un
     // upsert la dejaría ahí con el valor viejo.
-    await db.query(
-      `delete from marketing.business_mensual where mes >= $1::date`,
-      [`${desde}-01`],
-    );
+    //
+    // Sin cota inferior: la tabla ES la ventana. Con `>= desde` las filas que
+    // se caen de la ventana cuando cambia el mes quedaban ahí para siempre,
+    // con el mapeo del día en que se escribieron. Se vio con Bosch: la fila
+    // mala de Argentina sobrevivió al arreglo porque ya había quedado fuera
+    // de los meses que se reescriben.
+    await db.query(`delete from marketing.business_mensual`);
     for (const [clave, v] of filas) {
       const [mes, pais, empresa] = clave.split("|");
       await db.query(
@@ -97,10 +100,10 @@ export async function sincronizarBusiness(
     }
 
     // El diario, con el mismo criterio: se borra y se reescribe la ventana.
-    await db.query(
-      `delete from marketing.business_diario where fecha >= $1::date`,
-      [desdeDia(ahora)],
-    );
+    // Acá la cota inferior además se veía: la tabla se lee sin filtro de
+    // fecha, así que los días que se caían de los cuarenta y cinco seguían
+    // dibujándose en el gráfico.
+    await db.query(`delete from marketing.business_diario`);
     for (const f of diarias) {
       await db.query(
         `insert into marketing.business_diario (fecha, pais, empresa, nuevos)
@@ -111,13 +114,6 @@ export async function sincronizarBusiness(
   });
 
   return filas.size + diarias.length;
-}
-
-/** El primer día de la ventana diaria, en día local (UTC−3). */
-function desdeDia(ahora: Date): string {
-  const d = new Date(ahora.getTime() - 3 * 3_600_000);
-  d.setUTCDate(d.getUTCDate() - (DIAS_DE_BUSINESS - 1));
-  return d.toISOString().slice(0, 10);
 }
 
 /** 'YYYY-MM' del mes en curso, en día local (UTC−3). */
