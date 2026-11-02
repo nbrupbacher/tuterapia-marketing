@@ -994,6 +994,26 @@ const PROBES: Record<string, string> = {
            COUNT(DISTINCT empresa) AS empresas, MIN(mes) AS desde, MAX(mes) AS hasta
       FROM (${sqlUso(TRECE_MESES, "nueva")}) t`,
 
+  // Qué cupón entró en cada empresa, para cazar los falsos positivos.
+  //
+  // El mapeo son patrones, y un patrón sobre el NOMBRE puede agarrar un
+  // apellido: `%bosch%` metía un cupón nominal de 2024 adentro de una empresa
+  // que arrancó en mayo de 2026. Se vio por las fechas, no por el nombre.
+  //
+  // Devuelve el CÓDIGO y no el nombre: un código suelto es opaco, un nombre
+  // suelto puede ser el de un paciente. Y la primera y última fecha de cada
+  // uno, que es lo que delata al intruso: un cupón que empieza mucho antes
+  // que el resto de su empresa no es de esa empresa.
+  empresas_cupones: `
+    SELECT ${sqlEmpresa()} AS empresa, c.codigo, c.pais,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE ${sqlEmpresa()} <> ''
+     GROUP BY 1, c.id, c.codigo, c.pais
+     ORDER BY 1, primero`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 

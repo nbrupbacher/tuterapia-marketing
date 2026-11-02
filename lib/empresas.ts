@@ -88,7 +88,12 @@ export const EMPRESAS: Empresa[] = [
   { nombre: "Microlab", porNombre: ["%microlab%"] },
   { nombre: "Sofka", porNombre: ["%sofka%"] },
   { nombre: "Darnel", porNombre: ["%darnel%"] },
-  { nombre: "Bosch y Cía", porNombre: ["%bosch%"] },
+  // Por código y no por nombre: "Bosch" también es un apellido, y `%bosch%`
+  // sobre el nombre agarraba un cupón nominal de 2024 —la empresa arrancó en
+  // mayo de 2026—. Se veía en los datos: Argentina mostraba exactamente 2
+  // activos los trece meses, cero pacientes nuevos y cero sesiones
+  // facturadas, que no es la forma de una empresa.
+  { nombre: "Bosch y Cía", porCodigo: ["#bienestarbosch%"] },
   { nombre: "Aldeas Infantiles", porNombre: ["%aldeas%"] },
   { nombre: "Gómez Platero", porNombre: ["%platero%"] },
   { nombre: "ANDA", porCodigo: ["#anda%"] },
