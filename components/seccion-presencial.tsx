@@ -9,19 +9,20 @@ import { DIAS_DE_PRESENCIAL_UI, type VistaPresencial } from "@/lib/presencial";
  * Cuántos pacientes entran presencial, por mes y por día.
  *
  * Va entre el diario de pacientes nuevos y el de sesiones vendidas: arriba
- * queda junto todo lo que son personas, y abajo empalma con las sesiones, que
- * usan exactamente estos colores para las mismas cuatro bandas.
+ * queda junto todo lo que son personas, y abajo empalma con las sesiones,
+ * que parten las mismas modalidades con estos mismos colores.
  *
  * Pedido el 2026-11-03, cuando subió el precio presencial de Argentina de
  * 46.000 a 60.000. El mensual contesta si el nivel se mueve; el diario, si se
  * está moviendo ahora, que con un mes recién empezado es la única pregunta
  * que tiene respuesta.
  *
- * **Presencial es lo único que dibuja el mensual.** El online está en el
- * diario, abajo, porque ahí la pregunta es la mezcla del día; arriba la
- * pregunta es el nivel de una serie sola, y apilarle el online encima la
- * movería por razones ajenas —en 2026 el online de Argentina se triplicó—.
- * La parte presencial del total la dice la frase, que para eso está.
+ * **Los dos dibujan solo presencial.** El online no se apila ni arriba ni
+ * abajo: arriba movería la serie por razones ajenas —en 2026 el online de
+ * Argentina se triplicó— y abajo, con 45 barras en media pantalla, dejaba al
+ * presencial como una lámina de dos píxeles tapada por la banda de Argentina
+ * online. Y el gráfico decía 39 mientras el panel pegado a su derecha decía
+ * 11. Qué parte de los nuevos entró presencial lo dice la frase.
  */
 
 /** El color de cada país, el mismo que su banda presencial de abajo. */
@@ -89,14 +90,14 @@ export function SeccionPresencial({
 
       <section className="mt-8">
         <h2 className="text-xs uppercase tracking-wide text-ter">
-          Pacientes nuevos por país y modalidad · {DIAS_DE_PRESENCIAL_UI} días
+          Pacientes nuevos presenciales por país · {DIAS_DE_PRESENCIAL_UI} días
         </h2>
         <div className="mt-1 flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="flex-1">
             <GraficoDiario
               datos={vista.desglose}
               rate={false}
-              titulo="Pacientes nuevos por modalidad"
+              titulo="Pacientes nuevos presenciales"
               clavesMono={false}
               colores={colores}
             />

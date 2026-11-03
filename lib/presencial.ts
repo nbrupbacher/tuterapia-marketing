@@ -34,7 +34,18 @@ export type VistaPresencial = {
   porPais: { pais: string; valores: number[] }[];
   /** Nuevos de todas las modalidades, para la parte presencial. */
   totales: number[];
-  /** El apilado diario, con las cuatro bandas. */
+  /**
+   * El apilado diario: presenciales por país, y nada más.
+   *
+   * Con el online apilado encima no se podía leer. Son 45 barras en la
+   * mitad del ancho —el panel ocupa la otra— y el presencial es entre el 5%
+   * y el 20% del día, así que quedaba una lámina de dos píxeles abajo de una
+   * banda de Argentina online que la tapaba. Además el gráfico decía 39 y el
+   * panel de al lado 11, dos números distintos pegados sin explicación.
+   *
+   * La mezcla la contesta el mensual, con la frase que dice qué parte de los
+   * nuevos entró presencial.
+   */
   desglose: Desglose;
   /**
    * Las mismas bandas, en el mismo orden, con la clave cruda
@@ -42,15 +53,7 @@ export type VistaPresencial = {
    * el tooltip; la paleta se busca por la clave.
    */
   claves: string[];
-  /**
-   * El panel del mes, solo con los presenciales.
-   *
-   * Es una vista aparte y no la misma del gráfico porque el panel cuenta una
-   * cosa sola: cuántos presenciales van del mes, contra los mismos días del
-   * anterior, y dónde termina. Si contara las cuatro bandas diría cuántos
-   * pacientes entraron en total, que es el número que ya está arriba de todo
-   * en la tarjeta de Volumen.
-   */
+  /** El panel del mes, sobre los mismos presenciales que el gráfico. */
   panel: VistaSesiones;
   /** La frase de abajo del gráfico mensual, o null si no hay con qué. */
   lectura: string | null;
@@ -95,22 +98,15 @@ export async function leerPresencial(
     n: Number(f.nuevos),
   }));
 
-  const opciones = {
-    paises,
-    dias: DIAS_DE_PRESENCIAL_UI,
-    hoy,
-    orden: "modalidad" as const,
-  };
-  const todas = armarVista(filas, opciones);
   const panel = armarVista(
     filas.filter((f) => f.modalidad === "presencial"),
-    opciones,
+    { paises, dias: DIAS_DE_PRESENCIAL_UI, hoy, orden: "modalidad" },
   );
 
   return {
     ...armarMensual(mensual, paises, hoy),
-    desglose: armarDesglose(todas),
-    claves: todas.claves,
+    desglose: armarDesglose(panel),
+    claves: panel.claves,
     panel,
   };
 }

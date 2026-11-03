@@ -1243,11 +1243,17 @@ unos donde no se puede ver un cambio de nivel.
 
 ### Las dos tablas
 
-El mensual dibuja **solo presencial**, apilado por país. El online no se le
-apila encima: la pregunta de arriba es el nivel de una serie sola, y el online
-la movería por razones ajenas. El diario sí lleva las cuatro bandas, con el
-presencial abajo —la banda que se mira no puede flotar a distinta altura cada
-día— y los **mismos colores** que `sesiones vendidas`, que está pegado abajo.
+Los dos gráficos dibujan **solo presencial**, apilado por país, con los
+**mismos colores** que `sesiones vendidas`, que está pegado abajo.
+
+El online no se apila ni arriba ni abajo. Arriba movería la serie por razones
+ajenas: entre marzo y octubre de 2026 el presencial no se movió y el online de
+Argentina se triplicó, así que una barra con los dos adentro contaría esa otra
+historia. Y abajo se probó con las cuatro bandas y no se podía leer: son 45
+barras en media pantalla —el panel ocupa la otra— y con el presencial en el 5%
+al 20% del día quedaba una lámina de dos píxeles abajo de la banda de Argentina
+online. Encima el gráfico mostraba el total del día, 39, al lado de un panel
+que decía 11.
 
 El panel del mes cuenta **solo presenciales**: cuántos van del mes contra los
 mismos días del mes anterior, el reparto por país y la proyección a fin de mes.
