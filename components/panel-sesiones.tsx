@@ -11,9 +11,14 @@ import type { VistaSesiones } from "@/lib/sesiones";
 export function PanelSesiones({
   vista,
   mes,
+  leyenda = "sesiones vendidas",
+  corto = "vendidas",
 }: {
   vista: VistaSesiones;
   mes: string;
+  /** Qué nombra el panel. El mismo panel sirve para ventas y para personas. */
+  leyenda?: string;
+  corto?: string;
 }) {
   const {
     delMes,
@@ -74,7 +79,7 @@ export function PanelSesiones({
           contra todo agosto dice que el mes se derrumbó, y eso solo es cierto
           del calendario. */}
       <p className="mt-0.5 text-[11px] text-ter">
-        sesiones vendidas · vs. {entero(delMesPrevio)} en los mismos{" "}
+        {leyenda} · vs. {entero(delMesPrevio)} en los mismos{" "}
         {diaDelMes} días del mes anterior
       </p>
 
@@ -144,7 +149,7 @@ export function PanelSesiones({
 
         <p className="mt-1.5 flex items-baseline justify-between gap-2 text-[11px] text-ter">
           <span>
-            {entero(delMes)} vendidas · día {diaDelMes} de {diasDelMes}
+            {entero(delMes)} {corto} · día {diaDelMes} de {diasDelMes}
           </span>
           <span>
             cierre anterior {entero(cierrePrevio)}
