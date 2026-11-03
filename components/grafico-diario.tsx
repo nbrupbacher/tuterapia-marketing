@@ -23,12 +23,27 @@ export function GraficoDiario({
   rate,
   titulo,
   clavesMono = true,
+  colores,
 }: {
   datos: Desglose;
   rate: boolean;
   titulo: string;
   /** Whether the tooltip's keys are codes (monospace) or plain names. */
   clavesMono?: boolean;
+  /**
+   * Un color por clave, en el orden de `datos.plataformas`.
+   *
+   * Sin esto cada clave toma el color que le toca por posición en la paleta
+   * de plataformas, que es lo correcto cuando las claves son plataformas o
+   * empresas. La sección de presencial pasa los suyos porque sus cuatro
+   * bandas ya tienen color en el gráfico de sesiones vendidas, que está
+   * pegado abajo: la misma cosa tiene que ser del mismo color.
+   *
+   * Van las dos variantes escritas, `fill-` para la barra y `bg-` para el
+   * cuadradito de la leyenda: Tailwind lee el fuente como texto y una clase
+   * armada en runtime nunca llega a la hoja de estilo.
+   */
+  colores?: { relleno: string; fondo: string }[];
 }) {
   const [activo, setActivo] = useState<number | null>(null);
 
@@ -133,7 +148,10 @@ export function GraficoDiario({
                     y={tope}
                     width={anchoBarra}
                     height={Math.max((rate ? alto : base) - tope, 0)}
-                    className={colorPlataforma(pi).replace("bg-", "fill-")}
+                    className={
+                      colores?.[pi]?.relleno ??
+                      colorPlataforma(pi).replace("bg-", "fill-")
+                    }
                     opacity={activo === null || activo === i ? 1 : 0.35}
                   />
                 );
@@ -231,7 +249,11 @@ export function GraficoDiario({
       <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-sec">
         {datos.plataformas.map((p, i) => (
           <span key={p} className="flex items-center gap-1.5">
-            <span className={`inline-block h-2 w-2 rounded-sm ${colorPlataforma(i)}`} />
+            <span
+              className={`inline-block h-2 w-2 rounded-sm ${
+                colores?.[i]?.fondo ?? colorPlataforma(i)
+              }`}
+            />
             {p}
           </span>
         ))}

@@ -17,6 +17,8 @@ import { leerSesiones, DIAS_DE_BARRAS } from "@/lib/sesiones";
 import { GraficoSesiones } from "@/components/grafico-sesiones";
 import { PanelSesiones } from "@/components/panel-sesiones";
 import { SeccionTerapeuta } from "@/components/seccion-terapeuta";
+import { SeccionPresencial } from "@/components/seccion-presencial";
+import { leerPresencial } from "@/lib/presencial";
 import { tendencia, lectura, MESES_TENDENCIA, type Tendencia } from "@/lib/tendencia";
 import {
   entero,
@@ -133,11 +135,12 @@ export default async function General({
 }) {
   const params = await searchParams;
   const ctx = await contexto(params);
-  const [vista, diario, mensual, sesiones] = await Promise.all([
+  const [vista, diario, mensual, sesiones, presencial] = await Promise.all([
     leerGeneral(ctx.pais, ctx.rango),
     leerDesgloseDiario(ctx.pais, metricaDiaria(params.vol), DIAS_DE_BARRAS),
     leerDesgloseMensual(ctx.pais, metricaDiaria(params.vol), ctx.rango),
     leerSesiones(ctx.pais),
+    leerPresencial(ctx.pais, ctx.rango),
   ]);
 
   // El mes que titula el panel de ventas: el día local, como todo acá.
@@ -194,6 +197,16 @@ export default async function General({
                 titulo={VOLUMEN.find((m) => m.id === serieVol)!.nombre}
               />
             </section>
+
+            {/* Cuánta de esa gente entra presencial. Va acá y no más abajo
+                por dos razones: arriba queda junto todo lo que son personas,
+                y abajo empalma con las sesiones vendidas, que parten las
+                mismas cuatro bandas con los mismos colores. */}
+            <SeccionPresencial
+              vista={presencial}
+              pais={ctx.pais}
+              mes={mesEnCurso}
+            />
 
             {/* Sesiones vendidas, al mismo plazo que el gráfico de arriba para
                 que las dos series se lean una contra otra sin recalibrar el

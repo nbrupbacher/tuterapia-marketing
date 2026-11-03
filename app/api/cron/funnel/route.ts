@@ -7,6 +7,7 @@ import { sincronizarTerapeuta } from "@/lib/sync-terapeuta";
 import { sincronizarExterior } from "@/lib/sync-exterior";
 import { sincronizarBusiness } from "@/lib/sync-business";
 import { sincronizarRevenueBusiness } from "@/lib/sync-business-revenue";
+import { sincronizarPresencial } from "@/lib/sync-presencial";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,16 +55,17 @@ export async function GET(request: Request) {
   const startedAt = Date.now();
 
   try {
-    const { filas, terapeuta, exterior, business, revenue } = await withMysql(
-      (mysql) =>
+    const { filas, terapeuta, exterior, business, revenue, presencial } =
+      await withMysql((mysql) =>
         withDb(async (db) => ({
           filas: await sincronizarFunnel(mysql, db, dias, offset),
           terapeuta: await sincronizarTerapeuta(mysql, db),
           exterior: await sincronizarExterior(mysql, db),
           business: await sincronizarBusiness(mysql, db),
           revenue: await sincronizarRevenueBusiness(mysql, db),
+          presencial: await sincronizarPresencial(mysql, db),
         })),
-    );
+      );
 
     await withDb((db) =>
       db.query(
@@ -82,6 +84,7 @@ export async function GET(request: Request) {
       exterior,
       business,
       revenue,
+      presencial,
       ms: Date.now() - startedAt,
     });
   } catch (error) {

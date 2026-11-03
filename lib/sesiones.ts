@@ -19,6 +19,16 @@ const SEMANAS_DE_PATRON = 8;
 export const MODALIDADES = ["online", "presencial", "sin_dato"] as const;
 export type Modalidad = (typeof MODALIDADES)[number];
 
+/**
+ * El mismo juego, al revés: presencial primero.
+ *
+ * Lo usa la sección de presencial, donde el apilado tiene que empezar por
+ * abajo con lo que se está mirando. Con el presencial arriba de todo, la
+ * banda flota a distintas alturas según el online del día y deja de poder
+ * compararse contra sí misma.
+ */
+const POR_MODALIDAD = ["presencial", "online", "sin_dato"] as const;
+
 export type Barra = {
   fecha: string;
   /** Por `${pais}·${modalidad}`. */
@@ -75,13 +85,55 @@ export async function leerSesiones(
         order by fecha`,
       [paises, hoy],
     );
-    return rows;
+    return rows.map((r) => ({ ...r, n: Number(r.sesiones) }));
   });
 
+  return armarVista(filas, { paises, dias: DIAS_DE_BARRAS, hoy });
+}
+
+/** Una fila de un conteo diario partido por país y modalidad. */
+export type FilaModalidad = {
+  fecha: string;
+  pais: string;
+  modalidad: Modalidad;
+  n: number;
+};
+
+/**
+ * El gráfico y el panel, a partir de las filas diarias.
+ *
+ * Vive aparte de la consulta porque hay dos tablas con esta misma forma
+ * —`sesiones_vendidas` y `presencial_diario`— y la cuenta del mes contra los
+ * mismos días del anterior, el reparto y la proyección son idénticas. La
+ * regla del proyecto es que un cálculo no se escribe dos veces.
+ *
+ * `dias` es cuántas barras dibuja el gráfico; las filas que quedan afuera de
+ * esa ventana igual se usan, porque el mes anterior y el patrón semanal de la
+ * proyección miran más atrás que el gráfico.
+ *
+ * `orden` decide cómo se apila. Por país —online antes que presencial dentro
+ * de cada uno— es lo que hace falta cuando la pregunta es "de qué país".
+ * Por modalidad pone el presencial abajo de todo, que es lo que hace falta
+ * cuando la pregunta es justamente esa.
+ */
+export function armarVista(
+  filas: FilaModalidad[],
+  {
+    paises,
+    dias,
+    hoy,
+    orden = "pais",
+  }: {
+    paises: string[];
+    dias: number;
+    hoy: string;
+    orden?: "pais" | "modalidad";
+  },
+): VistaSesiones {
   // Un día de la serie por fecha, aunque no haya tenido ninguna sesión: un
   // domingo sin sesiones es un dato, no un hueco, y sin la barra vacía el eje
   // mentiría sobre el ritmo de la semana.
-  const desde = sumarDias(hoy, -(DIAS_DE_BARRAS - 1));
+  const desde = sumarDias(hoy, -(dias - 1));
   const barras: Barra[] = [];
   for (let d = desde; d <= hoy; d = sumarDias(d, 1)) {
     barras.push({ fecha: d, segmentos: new Map(), total: 0 });
@@ -90,24 +142,25 @@ export async function leerSesiones(
 
   const porDia = new Map<string, number>();
   for (const f of filas) {
-    porDia.set(f.fecha, (porDia.get(f.fecha) ?? 0) + f.sesiones);
+    porDia.set(f.fecha, (porDia.get(f.fecha) ?? 0) + f.n);
     const barra = porFecha.get(f.fecha);
     if (!barra) continue;
     const clave = `${f.pais}·${f.modalidad}`;
-    barra.segmentos.set(clave, (barra.segmentos.get(clave) ?? 0) + f.sesiones);
-    barra.total += f.sesiones;
+    barra.segmentos.set(clave, (barra.segmentos.get(clave) ?? 0) + f.n);
+    barra.total += f.n;
   }
 
-  // El orden de dibujo es fijo: país y dentro de cada país online antes que
-  // presencial. Si saliera de los datos, el apilado se reordenaría solo el día
-  // que una modalidad quede en cero.
+  // El orden de dibujo es fijo. Si saliera de los datos, el apilado se
+  // reordenaría solo el día que una modalidad quede en cero.
+  const pares =
+    orden === "pais"
+      ? paises.flatMap((p) => MODALIDADES.map((m) => [p, m] as const))
+      : POR_MODALIDAD.flatMap((m) => paises.map((p) => [p, m] as const));
   const claves: string[] = [];
-  for (const p of paises) {
-    for (const m of MODALIDADES) {
-      const clave = `${p}·${m}`;
-      if (barras.some((b) => (b.segmentos.get(clave) ?? 0) > 0)) {
-        claves.push(clave);
-      }
+  for (const [p, m] of pares) {
+    const clave = `${p}·${m}`;
+    if (barras.some((b) => (b.segmentos.get(clave) ?? 0) > 0)) {
+      claves.push(clave);
     }
   }
 
@@ -119,7 +172,7 @@ export async function leerSesiones(
   const enMes = (f: { fecha: string }) => f.fecha.slice(0, 7);
   const delMes = filas
     .filter((f) => enMes(f) === mes)
-    .reduce((a, f) => a + f.sesiones, 0);
+    .reduce((a, f) => a + f.n, 0);
 
   // Los mismos días del mes anterior, no el mes entero: medio septiembre
   // contra todo agosto dice que el mes se derrumbó, y eso solo es cierto del
@@ -127,30 +180,28 @@ export async function leerSesiones(
   const corte = `${previo}-${String(Math.min(diaDelMes, diasEnMes(previo))).padStart(2, "0")}`;
   const delMesPrevio = filas
     .filter((f) => enMes(f) === previo && f.fecha <= corte)
-    .reduce((a, f) => a + f.sesiones, 0);
+    .reduce((a, f) => a + f.n, 0);
 
   const cierrePrevio = filas
     .filter((f) => enMes(f) === previo)
-    .reduce((a, f) => a + f.sesiones, 0);
+    .reduce((a, f) => a + f.n, 0);
 
   const porParte = new Map<string, number>();
   for (const f of filas) {
     if (enMes(f) !== mes) continue;
     const clave = `${f.pais}·${f.modalidad}`;
-    porParte.set(clave, (porParte.get(clave) ?? 0) + f.sesiones);
+    porParte.set(clave, (porParte.get(clave) ?? 0) + f.n);
   }
   const partes: Parte[] = [];
-  for (const p of paises) {
-    for (const m of MODALIDADES) {
-      const n = porParte.get(`${p}·${m}`) ?? 0;
-      if (n === 0) continue;
-      partes.push({
-        pais: p,
-        modalidad: m,
-        sesiones: n,
-        parte: delMes > 0 ? n / delMes : 0,
-      });
-    }
+  for (const [p, m] of pares) {
+    const n = porParte.get(`${p}·${m}`) ?? 0;
+    if (n === 0) continue;
+    partes.push({
+      pais: p,
+      modalidad: m,
+      sesiones: n,
+      parte: delMes > 0 ? n / delMes : 0,
+    });
   }
 
   const { total: proyeccion, lineal } = proyectar(

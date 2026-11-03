@@ -1,0 +1,237 @@
+import { withDb } from "@/lib/db";
+import { LOCAL_UTC_OFFSET_HOURS } from "@/lib/queries/shared";
+import {
+  armarVista,
+  type FilaModalidad,
+  type Modalidad,
+  type VistaSesiones,
+} from "@/lib/sesiones";
+import type { Desglose, Punto } from "@/lib/desglose";
+
+/**
+ * Pacientes nuevos por modalidad, al mes y al día.
+ *
+ * Nuevo = primer pago confirmado, la misma definición de conversión que usa
+ * todo el tablero; la modalidad es la de ESE pago. Por eso la suma de las
+ * modalidades de un mes da exactamente `pacientes_nuevos` de General, y por
+ * eso la parte presencial se puede calcular acá sin ir a buscar el total a
+ * otra tabla: ya está adentro de esta.
+ *
+ * La pregunta que vino a contestar: el 1º de noviembre de 2026 subió el
+ * precio presencial de Argentina de 46.000 a 60.000, y hace falta ver si eso
+ * mueve la cantidad de gente que entra presencial.
+ */
+
+/** Cuántos días dibuja el apilado. */
+export const DIAS_DE_PRESENCIAL_UI = 45;
+
+export type VistaPresencial = {
+  /** Los meses de la ventana, en orden. */
+  meses: string[];
+  /** Cuál de ellos todavía está corriendo. */
+  enCurso: boolean[];
+  /** Presenciales por país, en el orden de `meses`. */
+  porPais: { pais: string; valores: number[] }[];
+  /** Nuevos de todas las modalidades, para la parte presencial. */
+  totales: number[];
+  /** El apilado diario, con las cuatro bandas. */
+  desglose: Desglose;
+  /**
+   * Las mismas bandas, en el mismo orden, con la clave cruda
+   * `'UY·presencial'`. El desglose lleva el nombre lindo para la leyenda y
+   * el tooltip; la paleta se busca por la clave.
+   */
+  claves: string[];
+  /**
+   * El panel del mes, solo con los presenciales.
+   *
+   * Es una vista aparte y no la misma del gráfico porque el panel cuenta una
+   * cosa sola: cuántos presenciales van del mes, contra los mismos días del
+   * anterior, y dónde termina. Si contara las cuatro bandas diría cuántos
+   * pacientes entraron en total, que es el número que ya está arriba de todo
+   * en la tarjeta de Volumen.
+   */
+  panel: VistaSesiones;
+  /** La frase de abajo del gráfico mensual, o null si no hay con qué. */
+  lectura: string | null;
+};
+
+export async function leerPresencial(
+  pais: string,
+  meses: number,
+  ahora = new Date(),
+): Promise<VistaPresencial> {
+  const hoy = diaLocal(ahora);
+  // Uruguay primero: adentro de cada modalidad la banda más grande va abajo,
+  // así la de arriba no flota a distinta altura cada día.
+  const paises = pais === "TOTAL" ? ["UY", "AR"] : [pais];
+
+  const { mensual, diario } = await withDb(async (db) => {
+    const [m, d] = await Promise.all([
+      db.query<{ mes: string; pais: string; modalidad: Modalidad; nuevos: number }>(
+        `select to_char(mes, 'YYYY-MM') as mes, pais, modalidad, nuevos
+           from marketing.presencial_mensual
+          where pais = any($1)
+            and mes > (date_trunc('month', current_date)
+                       - make_interval(months => $2))
+          order by mes`,
+        [paises, meses],
+      ),
+      db.query<{ fecha: string; pais: string; modalidad: Modalidad; nuevos: number }>(
+        `select fecha::text, pais, modalidad, nuevos
+           from marketing.presencial_diario
+          where pais = any($1) and fecha <= $2
+          order by fecha`,
+        [paises, hoy],
+      ),
+    ]);
+    return { mensual: m.rows, diario: d.rows };
+  });
+
+  const filas: FilaModalidad[] = diario.map((f) => ({
+    fecha: f.fecha,
+    pais: f.pais,
+    modalidad: f.modalidad,
+    n: Number(f.nuevos),
+  }));
+
+  const opciones = {
+    paises,
+    dias: DIAS_DE_PRESENCIAL_UI,
+    hoy,
+    orden: "modalidad" as const,
+  };
+  const todas = armarVista(filas, opciones);
+  const panel = armarVista(
+    filas.filter((f) => f.modalidad === "presencial"),
+    opciones,
+  );
+
+  return {
+    ...armarMensual(mensual, paises, hoy),
+    desglose: armarDesglose(todas),
+    claves: todas.claves,
+    panel,
+  };
+}
+
+/** La serie mensual, el total por mes y la frase. Pura, para poder probarla. */
+export function armarMensual(
+  filas: { mes: string; pais: string; modalidad: Modalidad; nuevos: number }[],
+  paises: string[],
+  hoy: string,
+): Pick<VistaPresencial, "meses" | "enCurso" | "porPais" | "totales" | "lectura"> {
+  const meses = [...new Set(filas.map((f) => f.mes))].sort();
+  const mesEnCurso = hoy.slice(0, 7);
+
+  const porPais = paises.map((p) => ({
+    pais: p,
+    valores: meses.map((m) =>
+      filas
+        .filter(
+          (f) => f.mes === m && f.pais === p && f.modalidad === "presencial",
+        )
+        .reduce((a, f) => a + Number(f.nuevos), 0),
+    ),
+  }));
+
+  const totales = meses.map((m) =>
+    filas.filter((f) => f.mes === m).reduce((a, f) => a + Number(f.nuevos), 0),
+  );
+
+  return {
+    meses,
+    enCurso: meses.map((m) => m === mesEnCurso),
+    porPais,
+    totales,
+    lectura: leer(meses, porPais, totales, mesEnCurso),
+  };
+}
+
+/**
+ * La frase de abajo del gráfico.
+ *
+ * Dice la parte presencial del último mes CERRADO y cómo se movió contra el
+ * anterior, en puntos porcentuales. La parte y no el número suelto porque es
+ * lo que el número suelto esconde: entre marzo y octubre de 2026 los
+ * presenciales se quedaron quietos en 130 y la parte cayó ocho puntos, porque
+ * lo que creció fue Argentina online.
+ */
+function leer(
+  meses: string[],
+  porPais: { pais: string; valores: number[] }[],
+  totales: number[],
+  mesEnCurso: string,
+): string | null {
+  const i = meses.lastIndexOf(mesEnCurso) === -1
+    ? meses.length - 1
+    : meses.lastIndexOf(mesEnCurso) - 1;
+  if (i < 1) return null;
+
+  const presencialDe = (k: number) =>
+    porPais.reduce((a, p) => a + (p.valores[k] ?? 0), 0);
+
+  const ahora = presencialDe(i);
+  const antes = presencialDe(i - 1);
+  const totalAhora = totales[i] ?? 0;
+  const totalAntes = totales[i - 1] ?? 0;
+  if (totalAhora === 0 || totalAntes === 0) return null;
+
+  const parte = ahora / totalAhora;
+  const parteAntes = antes / totalAntes;
+  const pp = (parte - parteAntes) * 100;
+  const mes = nombreCorto(meses[i]!);
+
+  const movimiento =
+    Math.abs(pp) < 0.5
+      ? "la misma parte que el mes anterior"
+      : `${Math.abs(pp).toFixed(1).replace(".", ",")} puntos ${pp > 0 ? "más" : "menos"} que el mes anterior`;
+
+  return `En ${mes}, ${ahora} de los ${totalAhora} pacientes nuevos entraron presencial: ${(parte * 100).toFixed(0)}%, ${movimiento}.`;
+}
+
+/**
+ * El apilado diario, en el formato que espera `GraficoDiario`.
+ *
+ * Se arma a partir de las barras que ya calculó `armarVista` y no de las
+ * filas crudas, para que el gráfico y el panel no puedan discrepar: son el
+ * mismo dato contado una sola vez.
+ */
+function armarDesglose(vista: VistaSesiones): Desglose {
+  const barras: Punto[] = [];
+  for (const b of vista.barras) {
+    for (const clave of vista.claves) {
+      const valor = b.segmentos.get(clave) ?? 0;
+      if (valor === 0) continue;
+      barras.push({ periodo: b.fecha, clave: etiqueta(clave), valor });
+    }
+  }
+  return {
+    barras,
+    plataformas: vista.claves.map(etiqueta),
+    // El tooltip muestra las mismas cuatro filas: con cuatro claves no hay
+    // una segunda dimensión que mostrar, y repetirlas es lo que hace que el
+    // día apuntado se pueda leer sin contar píxeles.
+    utm: barras,
+  };
+}
+
+/** 'UY·presencial' → 'UY presencial', que es como lo nombra la leyenda. */
+export function etiqueta(clave: string): string {
+  const [pais, modalidad] = clave.split("·");
+  return `${pais} ${modalidad === "sin_dato" ? "sin dato" : modalidad}`;
+}
+
+function nombreCorto(mes: string): string {
+  const NOMBRES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+  ];
+  return NOMBRES[Number(mes.slice(5, 7)) - 1] ?? mes;
+}
+
+function diaLocal(ahora: Date): string {
+  return new Date(ahora.getTime() - LOCAL_UTC_OFFSET_HOURS * 3_600_000)
+    .toISOString()
+    .slice(0, 10);
+}
