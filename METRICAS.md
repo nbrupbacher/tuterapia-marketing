@@ -1025,7 +1025,8 @@ del día en que se escribió, y ya nunca se vuelve a tocar. Se vio arreglando
 Bosch el 2026-11-02: la fila mala de Argentina sobrevivió al arreglo porque ya
 estaba fuera de los trece meses que se reescribían. Vale para las seis tablas
 de ventana móvil: `business_mensual`, `business_diario`, `business_revenue`,
-`exterior_mensual`, `exterior_utm` y `exterior_diario`. No vale para las del
+`exterior_mensual`, `exterior_utm`, `exterior_diario`, `presencial_mensual` y
+`presencial_diario`. No vale para las del
 funnel, que son historia acumulada y se borran por rango a propósito.
 
 **Se guardan y se muestran todos los orígenes.** No hay franja "resto": cada
@@ -1183,6 +1184,79 @@ diciembre de 2024, sentada al lado de Pilay, que arrancó el 2026-09-24.
 `activos` en esa tabla es **volumen, no gente distinta**: una empresa con el
 mismo paciente doce meses seguidos suma doce. Por eso va la cantidad de meses
 al lado.
+
+## 6 octies. Presencial
+
+Cuántos pacientes **entran** eligiendo presencial, al mes y al día. Lo pidió el
+dueño del producto el 2026-11-03: el 1º de noviembre subió el precio presencial
+de Argentina de 46.000 a 60.000 y quiere ver si eso mueve el volumen.
+
+### Qué cuenta como paciente presencial
+
+La modalidad no es del paciente ni de la sesión: es del **pago**
+(`pacientes_pagos.tipo_session`), que es justamente lo que cambia el precio
+(§3). Así que la modalidad con la que alguien entra es la de su **primer pago
+confirmado**, el mismo hecho que todo el tablero llama conversión.
+
+De eso se desprende la propiedad que hace que la pantalla cierre: **la suma de
+las modalidades de un mes es `pacientes_nuevos`**. Verificado contra septiembre
+(877) y octubre (760) de 2026.
+
+Queda afuera a propósito el paciente que ya era online y después compra un
+paquete presencial. Es demanda, pero no es conversión. Los dos números se
+midieron antes de elegir, en octubre de 2026:
+
+| Lectura | Octubre 2026 | Cierra contra |
+|---|---:|---|
+| Primer pago presencial | 136 | `pacientes_nuevos` de General |
+| Cualquiera que compró presencial | 527 | nada |
+
+Decisión del dueño del producto, 2026-11-03.
+
+`tipo_session` es nullable, así que hay una tercera modalidad de hecho,
+`sin_dato`. En catorce meses no hay ninguna, pero se conserva el camino: el día
+que aparezca una, ese paciente tiene que contarse y no desaparecer del total.
+
+### Lo que se midió antes de dibujar
+
+Nuevos con primer pago presencial, por mes:
+
+| Mes | AR | UY | Total | Parte de los nuevos |
+|---|---:|---:|---:|---:|
+| mar 2026 | 17 | 103 | 120 | 26% |
+| jun | 32 | 82 | 114 | 20% |
+| jul | 38 | 102 | 140 | 19% |
+| ago | 28 | 87 | 115 | 14% |
+| sep | 32 | 106 | 138 | 16% |
+| oct | 30 | 106 | 136 | 18% |
+
+**El número está quieto y la parte baja.** Entre marzo y octubre los
+presenciales se mantuvieron entre 114 y 140, mientras los nuevos totales
+pasaron de 461 a 760: la parte cayó ocho puntos sin que se perdiera un solo
+paciente presencial. Lo que creció fue Argentina online. Por eso la frase de
+abajo del gráfico dice la **parte** y no el número suelto.
+
+**Uruguay es tres cuartas partes del presencial** y Argentina hace alrededor de
+un paciente por día. Por eso el grano diario mira 45 días y no 15 como el resto
+de General: con una ventana corta, la serie argentina es una fila de ceros y
+unos donde no se puede ver un cambio de nivel.
+
+### Las dos tablas
+
+El mensual dibuja **solo presencial**, apilado por país. El online no se le
+apila encima: la pregunta de arriba es el nivel de una serie sola, y el online
+la movería por razones ajenas. El diario sí lleva las cuatro bandas, con el
+presencial abajo —la banda que se mira no puede flotar a distinta altura cada
+día— y los **mismos colores** que `sesiones vendidas`, que está pegado abajo.
+
+El panel del mes cuenta **solo presenciales**: cuántos van del mes contra los
+mismos días del mes anterior, el reparto por país y la proyección a fin de mes.
+Es el mismo panel de las ventas y la misma aritmética, compartida en
+`lib/sesiones.ts` en vez de escrita dos veces.
+
+Las dos tablas las escribe el cron del **funnel**, no el mensual, por la razón
+de siempre: `/api/cron/sync` ya muere a los 60 segundos sin llegar al mes
+anterior.
 
 ## 7. UTMs
 
@@ -1597,7 +1671,28 @@ create table marketing.exterior_diario (
   nuevos     int  not null,  -- primer pago del día, en U$S
   primary key (fecha, pais, origen, utm_source)
 );
+
+-- §6 octies. La suma de las modalidades de un mes es pacientes_nuevos.
+create table marketing.presencial_mensual (
+  mes        date not null,
+  pais       text not null,
+  modalidad  text not null,  -- online | presencial | sin_dato
+  nuevos     int  not null,  -- primer pago confirmado de esa modalidad
+  primary key (mes, pais, modalidad)
+);
+
+create table marketing.presencial_diario (
+  fecha      date not null,
+  pais       text not null,
+  modalidad  text not null,
+  nuevos     int  not null,
+  primary key (fecha, pais, modalidad)
+);
 ```
+
+`presencial_diario` guarda **120 días** y el gráfico dibuja 45: el resto lo
+necesita la proyección del panel, que pesa cada día de la semana sobre ocho
+semanas completas. Son los mismos 120 que guarda `sesiones_vendidas`.
 
 El diario, 45 días, lleva las **dos dimensiones en la misma fila**, al revés
 que la mensual. Arriba están separadas porque `activos` no se puede cruzar con
