@@ -4,6 +4,7 @@ import { withMysql } from "@/lib/mysql";
 import { isCronAuthorized } from "@/lib/auth";
 import { sqlEmpresa } from "@/lib/empresas";
 import { sqlUso } from "@/lib/queries/business-revenue";
+import { LOCAL_UTC_OFFSET_HOURS } from "@/lib/queries/shared";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1279,6 +1280,62 @@ const PROBES: Record<string, string> = {
      WHERE confirmado = 1 AND monto > 0 AND sesiones > 0
        AND creacion >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
      GROUP BY 1, 2 ORDER BY n DESC`,
+
+  // Patients whose FIRST confirmed payment is presencial, by month. The
+  // modality lives on the payment (`tipo_session`), so every new patient
+  // carries one at conversion. The window runs over every confirmed payment
+  // and the month filter is applied AFTER rn = 1, because the first payment
+  // has to be the first one ever, not the first inside the window.
+  //
+  // `login.paisDominio` and not the payment's, so this counts the same way
+  // "pacientes nuevos" counts on General (METRICAS.md §1).
+  presencial_nuevos_mes: `
+    SELECT mes, pais, modalidad, COUNT(*) AS pacientes
+      FROM (SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR), '%Y-%m') AS mes,
+                   l.paisDominio AS pais,
+                   COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                   ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
+                                      ORDER BY pp.creacion, pp.id) AS rn
+              FROM pacientes_pagos pp
+              JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+             WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR', 'UY')) t
+     WHERE rn = 1
+       AND mes >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 14 MONTH), '%Y-%m')
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+
+  // The same thing by day, to see whether the daily grain has enough volume
+  // to be worth drawing.
+  presencial_nuevos_dia: `
+    SELECT dia, pais, modalidad, COUNT(*) AS pacientes
+      FROM (SELECT DATE(DATE_SUB(pp.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR)) AS dia,
+                   l.paisDominio AS pais,
+                   COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                   ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
+                                      ORDER BY pp.creacion, pp.id) AS rn
+              FROM pacientes_pagos pp
+              JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+             WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR', 'UY')) t
+     WHERE rn = 1 AND dia >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+
+  // And every presencial BUYER, not only the new ones: a patient who was
+  // already online and buys presencial is demand too, and he is invisible in
+  // the probe above. Three numbers because they answer different questions:
+  // people, purchases and sessions.
+  presencial_compradores_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(pp.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR), '%Y-%m') AS mes,
+           l.paisDominio AS pais,
+           COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+           COUNT(DISTINCT pp.id_paciente) AS pacientes,
+           COUNT(*) AS pagos,
+           SUM(pp.sesiones) AS sesiones,
+           ROUND(SUM(pp.monto) / SUM(pp.sesiones)) AS precio_sesion
+      FROM pacientes_pagos pp
+      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+     WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR', 'UY')
+       AND pp.sesiones > 0
+       AND pp.creacion >= DATE_SUB(CURDATE(), INTERVAL 14 MONTH)
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
 
   // Raw utm_source values, to check the mapping patterns cover the volume.
   utm_sources: `
