@@ -193,21 +193,36 @@ function leer(
  * filas crudas, para que el gráfico y el panel no puedan discrepar: son el
  * mismo dato contado una sola vez.
  */
-function armarDesglose(vista: VistaSesiones): Desglose {
+export function armarDesglose(vista: VistaSesiones): Desglose {
   const barras: Punto[] = [];
   for (const b of vista.barras) {
+    let tiene = false;
     for (const clave of vista.claves) {
       const valor = b.segmentos.get(clave) ?? 0;
       if (valor === 0) continue;
+      tiene = true;
       barras.push({ periodo: b.fecha, clave: etiqueta(clave), valor });
+    }
+
+    // El día sin nadie lleva una fila en cero igual.
+    //
+    // El eje del gráfico se arma con las fechas que vienen en los puntos, así
+    // que un día sin fila desaparece y los días que quedan se dibujan
+    // pegados: tres días sin un solo presencial se leen como si fueran
+    // consecutivos. Con la fila en cero el día ocupa su lugar y el gráfico lo
+    // marca con su rayita en el piso, que es lo que deja contar cuántos días
+    // vacíos hubo en el medio. Es lo mismo que se arregló en Business el
+    // 2026-11-02.
+    if (!tiene && vista.claves.length > 0) {
+      barras.push({ periodo: b.fecha, clave: etiqueta(vista.claves[0]!), valor: 0 });
     }
   }
   return {
     barras,
     plataformas: vista.claves.map(etiqueta),
-    // El tooltip muestra las mismas cuatro filas: con cuatro claves no hay
-    // una segunda dimensión que mostrar, y repetirlas es lo que hace que el
-    // día apuntado se pueda leer sin contar píxeles.
+    // El tooltip muestra las mismas filas que el apilado: con dos claves no
+    // hay una segunda dimensión que mostrar, y repetirlas es lo que hace que
+    // el día apuntado se pueda leer sin contar píxeles.
     utm: barras,
   };
 }

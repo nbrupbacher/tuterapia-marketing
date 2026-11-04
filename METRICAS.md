@@ -1241,6 +1241,12 @@ un paciente por día. Por eso el grano diario mira 45 días y no 15 como el rest
 de General: con una ventana corta, la serie argentina es una fila de ceros y
 unos donde no se puede ver un cambio de nivel.
 
+Y por eso los **días en cero llevan su marca en el piso** en vez de faltar.
+Filtrando en Argentina, 19 de los 45 días no tienen un solo presencial: sin la
+marca esos días desaparecen del eje y los 26 que quedan se dibujan pegados,
+como si hubieran sido consecutivos. Es el mismo arreglo que se le hizo a
+Business el 2026-11-02 y por el mismo motivo.
+
 ### Las dos tablas
 
 Los dos gráficos dibujan **solo presencial**, apilado por país, con los

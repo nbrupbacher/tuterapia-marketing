@@ -90,7 +90,8 @@ export function SeccionPresencial({
 
       <section className="mt-8">
         <h2 className="text-xs uppercase tracking-wide text-ter">
-          Pacientes nuevos presenciales por país · {DIAS_DE_PRESENCIAL_UI} días
+          Pacientes nuevos presenciales
+          {pais === "TOTAL" ? " por país" : ""} · {DIAS_DE_PRESENCIAL_UI} días
         </h2>
         <div className="mt-1 flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="flex-1">
