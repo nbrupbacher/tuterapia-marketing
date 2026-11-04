@@ -59,7 +59,20 @@ function siguienteAlTocar(lista: string[]): string {
   return lista[turno]!;
 }
 
-type Estado = "quieta" | "medita" | "camina";
+type Estado = "quieta" | "medita" | "camina" | "salta";
+
+/**
+ * El salto: dos rebotes cortos y vuelve a lo suyo.
+ *
+ * Dos y no uno porque uno solo se lee como un tirón del navegador; dos lo
+ * leés como que saltó. Y cortos: esto vive en el header de una pantalla que
+ * alguien abre todas las mañanas, así que la gracia tiene que durar menos de
+ * un segundo y no volver en un rato largo.
+ */
+const SALTOS = 2;
+const MS_POR_SALTO = 420;
+/** Qué tan alto, en píxeles. La planta mide 46. */
+const ALTO_SALTO = 9;
 
 export function Planta({
   frases,
@@ -101,6 +114,8 @@ export function Planta({
     let dir: 1 | -1 = 1;
     let estado: Estado = "quieta";
     let hasta = 0;
+    /** Cuándo arrancó el estado actual. Solo lo usa el salto. */
+    let desde = 0;
     let anterior: number | null = null;
     let cuadro = 0;
     let ultima = "";
@@ -118,6 +133,7 @@ export function Planta({
         destino = Math.min(1, Math.max(0, x + salto));
         dir = destino > x ? 1 : -1;
       }
+      desde = ahora;
       hasta = ahora + duracion;
     }
 
@@ -127,7 +143,11 @@ export function Planta({
       // siete cambios a uno de cada tres: antes salía un paseo cada dos
       // minutos y duraba menos de un segundo.
       if (r < 0.4) cambiar("medita", ahora, azar(14_000, 26_000));
-      else if (r < 0.65) cambiar("quieta", ahora, azar(6_000, 12_000));
+      else if (r < 0.62) cambiar("quieta", ahora, azar(6_000, 12_000));
+      // Uno de cada diez cambios es un salto. Con un estado que dura doce
+      // segundos de promedio, eso es un salto cada dos minutos: lo justo para
+      // que te agarre desprevenido y no para que te canse.
+      else if (r < 0.72) cambiar("salta", ahora, SALTOS * MS_POR_SALTO);
       // El paseo termina cuando llega, no cuando se cumple el plazo. El plazo
       // es solo un tope por si el carril cambia de ancho a mitad de camino.
       else cambiar("camina", ahora, 12_000);
@@ -202,12 +222,31 @@ export function Planta({
       let inclina = 0;
       let hojas = 0;
       let respira = 1;
+      let estira = 1;
 
       if (caminando) {
         const paso = Math.sin(ahora / 240);
         bote = Math.abs(paso) * 2.2;
         inclina = paso * 2.4;
         hojas = Math.sin(ahora / 240 - 0.7) * 3.2;
+      } else if (estado === "salta" && !quieto) {
+        // Cada rebote es medio seno: sube y baja, y toca el piso justo cuando
+        // termina. El último cierra en cero, así que no hace falta acomodarla
+        // al salir del estado.
+        const fase = Math.min(1, (ahora - desde) / (hasta - desde)) * SALTOS;
+        const dentro = fase % 1;
+        bote = Math.sin(dentro * Math.PI) * ALTO_SALTO;
+
+        // Aplastarse para tomar impulso y estirarse en el aire. Es lo que
+        // hace que un rectángulo que sube y baja se lea como algo vivo y no
+        // como un elemento al que le cambiaron el `top`.
+        estira =
+          dentro < 0.12 || dentro > 0.88
+            ? 0.93
+            : 1 + Math.sin(dentro * Math.PI) * 0.07;
+
+        // Las hojas llegan tarde, como el pelo de alguien que salta.
+        hojas = -Math.sin(Math.max(0, dentro - 0.1) * Math.PI) * 7;
       } else if (estado === "medita" && !quieto) {
         respira = 1 + Math.sin(ahora / 1_700) * 0.04;
         hojas = Math.sin(ahora / 2_400) * 2;
@@ -219,7 +258,8 @@ export function Planta({
 
       planta!.style.transform =
         `translateX(${izq}px) translateY(${-bote}px) ` +
-        `rotate(${inclina}deg) scaleX(${dir === 1 ? 1 : -1})`;
+        `rotate(${inclina}deg) scaleX(${dir === 1 ? 1 : -1}) ` +
+        `scaleY(${estira.toFixed(4)})`;
 
       // El scale vertical se toma desde arriba del viewBox, así que hay que
       // bajarlo de vuelta o el tallo se despega de la maceta al respirar.
