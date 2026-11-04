@@ -1697,14 +1697,23 @@ create table marketing.presencial_diario (
   fecha      date not null,
   pais       text not null,
   modalidad  text not null,
+  utm_source text not null,  -- crudo; vacío = se registró sin utm
   nuevos     int  not null,
-  primary key (fecha, pais, modalidad)
+  primary key (fecha, pais, modalidad, utm_source)
 );
 ```
 
 `presencial_diario` guarda **120 días** y el gráfico dibuja 45: el resto lo
 necesita la proyección del panel, que pesa cada día de la semana sobre ocho
 semanas completas. Son los mismos 120 que guarda `sesiones_vendidas`.
+
+Y lleva el **utm del registro** en la misma fila que la modalidad del pago, que
+es el cruce que alimenta el tooltip del gráfico diario. Son dos momentos
+distintos del mismo paciente —se registró con un utm, después pagó eligiendo
+una modalidad— así que cruzarlos no cuenta a nadie dos veces: cada paciente
+nuevo tiene exactamente un primer pago y exactamente un utm. Es el mismo
+criterio de `exterior_diario`. El mensual no lo lleva: tiene su panel de
+composición al costado, que ya dice de qué está hecho el mes.
 
 El diario, 45 días, lleva las **dos dimensiones en la misma fila**, al revés
 que la mensual. Arriba están separadas porque `activos` no se puede cruzar con
