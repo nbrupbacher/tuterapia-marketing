@@ -214,10 +214,15 @@ Se organiza alrededor de **series temporales**, no de cards con deltas.
   toda la pantalla.
 - **Tooltip por `utm_source` crudo**, en el mensual y en el diario. Al pasar el
   mouse: el período, el total, y el desglose por source **tal cual está en la
-  base** (`metaarj7`, `tkarg`, `gadspre`), de mayor a menor, las 8 primeras y
-  el resto en "otras". Crudo y no agrupado porque ese es el string que alguien
-  escribió en una campaña y el único que puede ir a buscar; agrupar sería
-  contestar dos veces la pregunta que ya contestan las barras. El desglose es
+  base** (`metaarj7`, `tkarg`, `gadspre`), de mayor a menor, **todos**. Crudo y
+  sin agrupar porque ese es el string que alguien escribió en una campaña y el
+  único que puede ir a buscar; agrupar sería contestar dos veces la pregunta
+  que ya contestan las barras. Antes se cortaba en 8 y el resto iba a una fila
+  "otras", hasta que el dueño del producto señaló lo obvio el 2026-11-04: la
+  única razón para abrir el tooltip es leer el código, y "otras · 2" esconde
+  justamente eso. Cuando la lista pasa de 18 filas se parte en dos columnas,
+  que es lo que hace que el caso más largo —un mes de registros en TOTAL, 57
+  fuentes— entre en pantalla. El desglose es
   **de la métrica seleccionada**: si la card es Pacientes nuevos, el detalle es
   de pacientes nuevos.
 - **Gráfico diario en el medio**, entre los dos bloques: barras apiladas por
@@ -456,6 +461,12 @@ vuelve.
 Menos del 2% se agrupa en "otras", y también la cola que sobre después de cinco
 filas nombradas. Once plataformas donde siete redondean a cero vuelven a ser una
 leyenda, no una lectura.
+
+Acá sí se agrupa y en el tooltip no, y la diferencia es qué hay en cada lista.
+El panel lista **plataformas**, que son seis o siete y están todas nombradas en
+el resto de la pantalla: la que se agrupa no se pierde, se mira en otro lado. El
+tooltip lista **codigos de campaña**, que no están en ninguna otra parte del
+tablero; ahí agrupar es esconder.
 
 ## Los números del gráfico diario
 
