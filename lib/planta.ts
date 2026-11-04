@@ -24,38 +24,59 @@ export type FrasesPlanta = string[];
 /**
  * Las de ambiente. No dicen nada del negocio y esa es toda su función: si
  * todas las frases fueran números, el header pasaría a ser una pestaña más.
+ *
+ * El tono lo pidió el dueño del producto el 2026-11-04: más ácida. Las
+ * anteriores eran amables y se volvían invisibles a la semana; estas se
+ * burlan de lo único de lo que esta planta puede burlarse sin costo, que es
+ * mirar un tablero.
+ *
+ * Tres cosas quedan afuera, y no por pudor:
+ *
+ *  · los pacientes. Es una empresa de terapia y la gente que aparece en estos
+ *    números está yendo a terapia. No hay chiste ahí que valga la pena.
+ *  · las personas del equipo. Son cuatro y entran todos los días; una chicana
+ *    sobre el trabajo de alguien, repetida cada noventa segundos, deja de ser
+ *    un chiste al tercer día.
+ *  · las malas palabras. Esto se proyecta en reuniones.
+ *
+ * Y cortas: el globo es `white-space: nowrap`, así que una frase larga se
+ * estira en una sola línea hasta salirse. Cuarenta y pico de caracteres.
  */
 const AMBIENTE = [
-  "buenas",
-  "me regaron ayer, gracias",
-  "acá andamos",
-  "qué lindo día para mirar números",
-  "respirá hondo una vez",
-  "¿ya almorzaste?",
-  "me estiro y vuelvo",
-  "yo también estoy creciendo",
-  "el sol de la tarde pega justo acá",
-  "tomá agua",
+  "mirarlo fijo no lo mueve",
+  "refrescar tampoco, ya probé",
+  "yo no decido nada acá, solo decoro",
+  "spoiler: mañana va a ser parecido",
+  "me regaron el martes, por las dudas",
+  "¿otra vez el mismo gráfico?",
+  "la conversión no mejora si la mirás",
+  "hace ocho minutos que no pasa nada",
+  "andá a tomar agua, yo te cubro",
+  "estoy para que el header no esté vacío",
 ];
 
 /**
- * Las motivacionales. Son lo que dice cuando alguien la toca: una distinta por
- * toque, y da la vuelta a las diez antes de repetir una.
+ * Lo que dice cuando alguien la toca: una distinta por toque, y da la vuelta
+ * a las diez antes de repetir una.
  *
  * No se mezclan con lo que dice sola cada noventa segundos. Así tocarla tiene
  * algo propio, y las frases con datos no quedan diluidas entre veinte más.
+ *
+ * La última no es un chiste y está a propósito. Nueve respuestas secas y una
+ * sincera hacen que la sincera se note; diez seguidas de las otras serían un
+ * personaje de una nota sola.
  */
 export const MOTIVACIONALES = [
-  "vas mejor de lo que pensás",
-  "un paso a la vez también es avanzar",
-  "lo que sembrás hoy florece más adelante",
-  "crecer lleva tiempo, preguntale a cualquier planta",
+  "tocarme no es una estrategia de crecimiento",
+  "bueno, ya está, no me gastes",
+  "una más y pido aumento",
+  "no soy un botón, pero gracias",
+  "crecer lleva tiempo, mirá mi maceta",
+  "preguntale al CAC, yo no sé nada",
+  "si estás tocándome, el mes viene tranquilo",
+  "dale, última, que estaba meditando",
+  "la paciencia es gratis, el tráfico no",
   "cada registro es alguien que se animó a pedir ayuda",
-  "de a poco también se llega",
-  "no hace falta poder con todo hoy",
-  "cada campaña enseña algo, salga como salga",
-  "date crédito: estás haciendo un montón",
-  "confiá en el proceso, como en terapia",
 ];
 
 type Fila = {
