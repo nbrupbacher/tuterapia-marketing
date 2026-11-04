@@ -80,8 +80,14 @@ export async function leerPresencial(
           order by mes`,
         [paises, meses],
       ),
-      db.query<{ fecha: string; pais: string; modalidad: Modalidad; nuevos: number }>(
-        `select fecha::text, pais, modalidad, nuevos
+      db.query<{
+        fecha: string;
+        pais: string;
+        modalidad: Modalidad;
+        utm_source: string;
+        nuevos: number;
+      }>(
+        `select fecha::text, pais, modalidad, utm_source, nuevos
            from marketing.presencial_diario
           where pais = any($1) and fecha <= $2
           order by fecha`,
@@ -91,12 +97,17 @@ export async function leerPresencial(
     return { mensual: m.rows, diario: d.rows };
   });
 
+  // Las filas vienen partidas por utm, que es una dimensión más fina que la
+  // del gráfico. `armarVista` suma, así que se le pasan tal cual: la barra
+  // de un día queda igual que antes y el utm sobrevive para el tooltip.
   const filas: FilaModalidad[] = diario.map((f) => ({
     fecha: f.fecha,
     pais: f.pais,
     modalidad: f.modalidad,
     n: Number(f.nuevos),
   }));
+
+  const presenciales = diario.filter((f) => f.modalidad === "presencial");
 
   const panel = armarVista(
     filas.filter((f) => f.modalidad === "presencial"),
@@ -105,7 +116,7 @@ export async function leerPresencial(
 
   return {
     ...armarMensual(mensual, paises, hoy),
-    desglose: armarDesglose(panel),
+    desglose: armarDesglose(panel, porUtm(presenciales)),
     claves: panel.claves,
     panel,
   };
@@ -193,7 +204,28 @@ function leer(
  * filas crudas, para que el gráfico y el panel no puedan discrepar: son el
  * mismo dato contado una sola vez.
  */
-export function armarDesglose(vista: VistaSesiones): Desglose {
+/**
+ * Los presenciales de cada día por utm, sumando los países.
+ *
+ * Suma los países a propósito: la barra ya está partida por país y el tooltip
+ * contesta la otra pregunta, de dónde vinieron. Con el selector en un país la
+ * consulta ya trajo solo ese, así que no hay nada que sumar.
+ */
+function porUtm(
+  filas: { fecha: string; utm_source: string; nuevos: number }[],
+): Punto[] {
+  const porClave = new Map<string, number>();
+  for (const f of filas) {
+    const clave = `${f.fecha}|${f.utm_source === "" ? "(sin tag)" : f.utm_source}`;
+    porClave.set(clave, (porClave.get(clave) ?? 0) + Number(f.nuevos));
+  }
+  return [...porClave].map(([clave, valor]) => {
+    const [periodo, utm] = clave.split("|");
+    return { periodo: periodo!, clave: utm!, valor };
+  });
+}
+
+export function armarDesglose(vista: VistaSesiones, utm: Punto[]): Desglose {
   const barras: Punto[] = [];
   for (const b of vista.barras) {
     let tiene = false;
@@ -220,10 +252,10 @@ export function armarDesglose(vista: VistaSesiones): Desglose {
   return {
     barras,
     plataformas: vista.claves.map(etiqueta),
-    // El tooltip muestra las mismas filas que el apilado: con dos claves no
-    // hay una segunda dimensión que mostrar, y repetirlas es lo que hace que
-    // el día apuntado se pueda leer sin contar píxeles.
-    utm: barras,
+    // El tooltip contesta otra cosa que la barra: la barra dice cuántos y de
+    // qué país, el tooltip de dónde vinieron. Antes repetía las dos filas del
+    // apilado, que era decir dos veces lo mismo.
+    utm,
   };
 }
 

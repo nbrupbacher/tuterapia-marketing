@@ -26,6 +26,8 @@ export type NuevoPorModalidad = {
   periodo: string;
   pais: string;
   modalidad: "online" | "presencial" | "sin_dato";
+  /** Crudo, como lo guarda `login.utm_source`. Vacío = se registró sin utm. */
+  utm_source: string;
   n: number;
 };
 
@@ -42,12 +44,18 @@ export type NuevoPorModalidad = {
  * de los trece meses que se están mirando. Un paciente de 2024 que vuelve a
  * comprar hoy no es nuevo hoy.
  */
-function sql(periodo: string): string {
+function sql(periodo: string, conUtm: boolean): string {
+  // El utm es del REGISTRO (`login.utm_source`) y la modalidad es del PAGO.
+  // Son dos momentos distintos del mismo paciente y por eso se pueden cruzar
+  // sin contar a nadie dos veces: cada paciente nuevo tiene exactamente un
+  // primer pago y exactamente un utm.
+  const utm = conUtm ? `COALESCE(l.utm_source, '') AS utm_source,` : "";
   return `
-    SELECT periodo, pais, modalidad, COUNT(*) AS n
+    SELECT periodo, pais, modalidad, ${conUtm ? "utm_source," : ""} COUNT(*) AS n
       FROM (SELECT ${periodo} AS periodo,
                    l.paisDominio AS pais,
                    COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                   ${utm}
                    ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
                                       ORDER BY pp.creacion, pp.id) AS rn
               FROM pacientes_pagos pp
@@ -55,7 +63,7 @@ function sql(periodo: string): string {
              WHERE pp.confirmado = 1
                AND l.paisDominio IN ('AR', 'UY')) t
      WHERE rn = 1 AND periodo >= ? AND periodo <= ?
-     GROUP BY 1, 2, 3
+     GROUP BY 1, 2, 3${conUtm ? ", 4" : ""}
      ORDER BY 1, 2, 3`;
 }
 
@@ -74,16 +82,22 @@ export function nuevosPorModalidad(
   desde: string,
   hasta: string,
 ): Promise<NuevoPorModalidad[]> {
-  return consultar(conn, sql(MES), desde, hasta);
+  return consultar(conn, sql(MES, false), desde, hasta);
 }
 
-/** Y por día, con extremos 'YYYY-MM-DD', también inclusivos. */
+/**
+ * Y por día, con extremos 'YYYY-MM-DD', también inclusivos.
+ *
+ * Este trae además el `utm_source`, que el mensual no necesita: el gráfico
+ * mensual tiene su panel de composición al costado y el diario no, así que su
+ * única forma de contestar "¿de dónde vinieron estos tres?" es el tooltip.
+ */
 export function nuevosPorModalidadPorDia(
   conn: Connection,
   desde: string,
   hasta: string,
 ): Promise<NuevoPorModalidad[]> {
-  return consultar(conn, sql(DIA), desde, hasta);
+  return consultar(conn, sql(DIA, true), desde, hasta);
 }
 
 async function consultar(
@@ -97,6 +111,7 @@ async function consultar(
       periodo: string;
       pais: string;
       modalidad: string;
+      utm_source?: string;
       n: number;
     })[]
   >(consulta, [desde, hasta]);
@@ -106,6 +121,7 @@ async function consultar(
     periodo: String(r.periodo),
     pais: r.pais,
     modalidad: r.modalidad as NuevoPorModalidad["modalidad"],
+    utm_source: r.utm_source ?? "",
     n: Number(r.n),
   }));
 }

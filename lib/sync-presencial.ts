@@ -69,12 +69,15 @@ export async function sincronizarPresencial(
 
     await db.query(`delete from marketing.presencial_diario`);
     await db.query(
-      `insert into marketing.presencial_diario (fecha, pais, modalidad, nuevos)
-       select * from unnest($1::date[], $2::text[], $3::text[], $4::int[])`,
+      `insert into marketing.presencial_diario
+         (fecha, pais, modalidad, utm_source, nuevos)
+       select * from unnest($1::date[], $2::text[], $3::text[], $4::text[],
+                            $5::int[])`,
       [
         dias.map((f) => f.periodo),
         dias.map((f) => f.pais),
         dias.map((f) => f.modalidad),
+        dias.map((f) => f.utm_source),
         dias.map((f) => f.n),
       ],
     );

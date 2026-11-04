@@ -95,11 +95,13 @@ export function SeccionPresencial({
         </h2>
         <div className="mt-1 flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="flex-1">
+            {/* `clavesMono` queda en su default: el tooltip lista utm_source
+                crudos, que son códigos escritos a mano y se leen mejor en
+                monoespaciada, igual que en el diario de arriba. */}
             <GraficoDiario
               datos={vista.desglose}
               rate={false}
               titulo="Pacientes nuevos presenciales"
-              clavesMono={false}
               colores={colores}
             />
           </div>
