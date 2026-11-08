@@ -1,5 +1,6 @@
 import { withDb } from "@/lib/db";
 import { LOCAL_UTC_OFFSET_HOURS } from "@/lib/queries/shared";
+import { SIN_ZONA } from "@/lib/zonas";
 import {
   armarVista,
   type FilaModalidad,
@@ -30,8 +31,18 @@ export type VistaPresencial = {
   meses: string[];
   /** Cuál de ellos todavía está corriendo. */
   enCurso: boolean[];
-  /** Presenciales por país, en el orden de `meses`. */
-  porPais: { pais: string; valores: number[] }[];
+  /**
+   * Las franjas del gráfico mensual, en orden de dibujo: la más grande
+   * abajo, 'sin zona' siempre al final.
+   *
+   * En TOTAL son los países, porque la pregunta es la mezcla del total. Con
+   * un país elegido son sus provincias, que es lo que el país ya no puede
+   * contestar: en Argentina CABA es el 60% y el resto está repartido en
+   * nueve provincias que, sin abrir, se leen como un solo número.
+   */
+  series: { nombre: string; valores: number[] }[];
+  /** Si `series` son provincias o países, que decide la paleta. */
+  porProvincia: boolean;
   /** Nuevos de todas las modalidades, para la parte presencial. */
   totales: number[];
   /**
@@ -71,8 +82,15 @@ export async function leerPresencial(
 
   const { mensual, diario } = await withDb(async (db) => {
     const [m, d] = await Promise.all([
-      db.query<{ mes: string; pais: string; modalidad: Modalidad; nuevos: number }>(
-        `select to_char(mes, 'YYYY-MM') as mes, pais, modalidad, nuevos
+      db.query<{
+        mes: string;
+        pais: string;
+        modalidad: Modalidad;
+        provincia: string;
+        nuevos: number;
+      }>(
+        `select to_char(mes, 'YYYY-MM') as mes, pais, modalidad, provincia,
+                nuevos
            from marketing.presencial_mensual
           where pais = any($1)
             and mes > (date_trunc('month', current_date)
@@ -124,23 +142,50 @@ export async function leerPresencial(
 
 /** La serie mensual, el total por mes y la frase. Pura, para poder probarla. */
 export function armarMensual(
-  filas: { mes: string; pais: string; modalidad: Modalidad; nuevos: number }[],
+  filas: {
+    mes: string;
+    pais: string;
+    modalidad: Modalidad;
+    provincia: string;
+    nuevos: number;
+  }[],
   paises: string[],
   hoy: string,
-): Pick<VistaPresencial, "meses" | "enCurso" | "porPais" | "totales" | "lectura"> {
+): Pick<
+  VistaPresencial,
+  "meses" | "enCurso" | "series" | "porProvincia" | "totales" | "lectura"
+> {
   const meses = [...new Set(filas.map((f) => f.mes))].sort();
   const mesEnCurso = hoy.slice(0, 7);
 
-  const porPais = paises.map((p) => ({
-    pais: p,
-    valores: meses.map((m) =>
-      filas
-        .filter(
-          (f) => f.mes === m && f.pais === p && f.modalidad === "presencial",
-        )
-        .reduce((a, f) => a + Number(f.nuevos), 0),
-    ),
-  }));
+  // Con un país elegido las franjas son sus provincias; en TOTAL son los dos
+  // países, porque ahí la pregunta es la mezcla del total y las provincias de
+  // los dos países juntas no son una lista que se pueda leer.
+  const porProvincia = paises.length === 1;
+  const clave = (f: { pais: string; provincia: string }) =>
+    porProvincia ? f.provincia : f.pais;
+
+  const presenciales = filas.filter((f) => f.modalidad === "presencial");
+  const nombres = [...new Set(presenciales.map(clave))];
+
+  const series = nombres
+    .map((nombre) => ({
+      nombre,
+      valores: meses.map((m) =>
+        presenciales
+          .filter((f) => f.mes === m && clave(f) === nombre)
+          .reduce((a, f) => a + Number(f.nuevos), 0),
+      ),
+    }))
+    // La más grande abajo, para que la de arriba no flote a distinta altura
+    // cada mes. 'sin zona' al final aunque sea grande: es la ausencia del
+    // dato, no un lugar, y arriba de todo se lee como lo que es.
+    .sort((a, b) => {
+      if (a.nombre === SIN_ZONA) return 1;
+      if (b.nombre === SIN_ZONA) return -1;
+      return suma(b.valores) - suma(a.valores);
+    })
+    .filter((s) => suma(s.valores) > 0);
 
   const totales = meses.map((m) =>
     filas.filter((f) => f.mes === m).reduce((a, f) => a + Number(f.nuevos), 0),
@@ -149,10 +194,15 @@ export function armarMensual(
   return {
     meses,
     enCurso: meses.map((m) => m === mesEnCurso),
-    porPais,
+    series,
+    porProvincia,
     totales,
-    lectura: leer(meses, porPais, totales, mesEnCurso),
+    lectura: leer(meses, series, totales, mesEnCurso),
   };
+}
+
+function suma(valores: number[]): number {
+  return valores.reduce((a, b) => a + b, 0);
 }
 
 /**
@@ -166,7 +216,7 @@ export function armarMensual(
  */
 function leer(
   meses: string[],
-  porPais: { pais: string; valores: number[] }[],
+  series: { nombre: string; valores: number[] }[],
   totales: number[],
   mesEnCurso: string,
 ): string | null {
@@ -176,7 +226,7 @@ function leer(
   if (i < 1) return null;
 
   const presencialDe = (k: number) =>
-    porPais.reduce((a, p) => a + (p.valores[k] ?? 0), 0);
+    series.reduce((a, p) => a + (p.valores[k] ?? 0), 0);
 
   const ahora = presencialDe(i);
   const antes = presencialDe(i - 1);

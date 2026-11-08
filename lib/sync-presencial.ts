@@ -57,12 +57,15 @@ export async function sincronizarPresencial(
     // dos consultas a MySQL juntas.
     await db.query(`delete from marketing.presencial_mensual`);
     await db.query(
-      `insert into marketing.presencial_mensual (mes, pais, modalidad, nuevos)
-       select * from unnest($1::date[], $2::text[], $3::text[], $4::int[])`,
+      `insert into marketing.presencial_mensual
+         (mes, pais, modalidad, provincia, nuevos)
+       select * from unnest($1::date[], $2::text[], $3::text[], $4::text[],
+                            $5::int[])`,
       [
         meses.map((f) => `${f.periodo}-01`),
         meses.map((f) => f.pais),
         meses.map((f) => f.modalidad),
+        meses.map((f) => f.provincia),
         meses.map((f) => f.n),
       ],
     );

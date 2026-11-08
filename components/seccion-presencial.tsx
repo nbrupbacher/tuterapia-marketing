@@ -1,7 +1,8 @@
 import { GraficoSerie, type Serie } from "@/components/grafico-serie";
 import { GraficoDiario } from "@/components/grafico-diario";
 import { PanelSesiones } from "@/components/panel-sesiones";
-import { identidadDe } from "@/components/identidad";
+import { SIN_AGRUPAR } from "@/components/composicion";
+import { identidadDe, PALETA_LARGA } from "@/components/identidad";
 import { RELLENO_SEGMENTO, FONDO_SEGMENTO } from "@/lib/sesiones-ui";
 import { DIAS_DE_PRESENCIAL_UI, type VistaPresencial } from "@/lib/presencial";
 
@@ -54,16 +55,25 @@ export function SeccionPresencial({
     );
   }
 
-  const series: Serie[] = vista.porPais.map((p) => ({
-    nombre: p.pais,
-    puntos: vista.meses.map((m, i) => ({
-      mes: m,
-      valor: p.valores[i] ?? null,
-      enCurso: vista.enCurso[i] ?? false,
-    })),
-    trazo: COLOR[p.pais]?.trazo ?? "stroke-orange",
-    relleno: COLOR[p.pais]?.relleno ?? "fill-orange",
-  }));
+  // En TOTAL las franjas son los dos países y llevan el color que esos
+  // mismos países tienen abajo, en el apilado diario. Con un país elegido
+  // son sus provincias y ahí no hay color propio que respetar: va la paleta
+  // larga, la misma que usa Exterior para sus países.
+  const series: Serie[] = vista.series.map((p, i) => {
+    const color = vista.porProvincia
+      ? PALETA_LARGA[i % PALETA_LARGA.length]!
+      : (COLOR[p.nombre] ?? PALETA_LARGA[i % PALETA_LARGA.length]!);
+    return {
+      nombre: p.nombre,
+      puntos: vista.meses.map((m, k) => ({
+        mes: m,
+        valor: p.valores[k] ?? null,
+        enCurso: vista.enCurso[k] ?? false,
+      })),
+      trazo: color.trazo,
+      relleno: color.relleno,
+    };
+  });
 
   const colores = vista.claves.map((clave) => ({
     relleno: RELLENO_SEGMENTO[clave] ?? "fill-ses-nd",
@@ -82,6 +92,11 @@ export function SeccionPresencial({
           formatoId="entero"
           identidad={identidadDe(pais)}
           apiladas={series.length > 1}
+          /* Sin agrupar la cola: el dueño del producto ya pidió eso para
+             Exterior —"prefiero que los muestres que decir resto"— y acá
+             la cola son provincias de uno o dos pacientes, que es
+             justamente lo que se vino a mirar. */
+          recortePanel={vista.porProvincia ? SIN_AGRUPAR : undefined}
         />
         {vista.lectura === null ? null : (
           <p className="mt-3 text-sm text-sec">{vista.lectura}</p>

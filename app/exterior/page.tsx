@@ -1,7 +1,7 @@
 import { Nav, Selectores, contexto } from "@/components/nav";
 import { GraficoSerie, type Serie } from "@/components/grafico-serie";
 import { GraficoDiario } from "@/components/grafico-diario";
-import { identidadDe } from "@/components/identidad";
+import { identidadDe, PALETA_LARGA } from "@/components/identidad";
 import {
   leerExterior,
   type SerieExterior,
@@ -40,20 +40,7 @@ export const dynamic = "force-dynamic";
  * un paciente y miden un píxel, donde el color ya no distingue nada y el panel
  * del costado es el que nombra.
  */
-const PALETA = [
-  { relleno: "fill-orange", trazo: "stroke-orange" },
-  { relleno: "fill-teal", trazo: "stroke-teal" },
-  { relleno: "fill-gold", trazo: "stroke-gold" },
-  { relleno: "fill-orange-dk", trazo: "stroke-orange-dk" },
-  { relleno: "fill-coral", trazo: "stroke-coral" },
-  { relleno: "fill-e1", trazo: "stroke-e1" },
-  { relleno: "fill-e3", trazo: "stroke-e3" },
-  { relleno: "fill-e5", trazo: "stroke-e5" },
-  { relleno: "fill-e2", trazo: "stroke-e2" },
-  { relleno: "fill-e4", trazo: "stroke-e4" },
-  { relleno: "fill-e6", trazo: "stroke-e6" },
-  { relleno: "fill-dim", trazo: "stroke-dim" },
-];
+const PALETA = PALETA_LARGA;
 
 /** En TOTAL cada plataforma lleva su color de identidad, como en General. */
 const COLOR_PLATAFORMA: Record<string, number> = { AR: 1, UY: 2 };

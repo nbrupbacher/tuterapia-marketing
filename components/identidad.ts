@@ -76,6 +76,33 @@ const PLATAFORMA_COLORES = [
   "bg-orange-dk",
 ];
 
+/**
+ * Doce colores, para cuando las franjas son muchas y no seis.
+ *
+ * Los seis de marca y seis del degradé del funnel. Lo usan Exterior —que
+ * dibuja todos los países en vez de agrupar la cola— y la sección de
+ * presencial cuando parte por provincia. Pasado el duodécimo los colores se
+ * repiten, y ahí las franjas son de un paciente y miden un píxel: el color ya
+ * no distingue nada y el que nombra es el panel del costado.
+ *
+ * Escritos enteros, como todo lo demás acá: Tailwind lee el fuente como texto
+ * y una clase armada en runtime nunca llega a la hoja de estilo.
+ */
+export const PALETA_LARGA = [
+  { relleno: "fill-orange", trazo: "stroke-orange" },
+  { relleno: "fill-teal", trazo: "stroke-teal" },
+  { relleno: "fill-gold", trazo: "stroke-gold" },
+  { relleno: "fill-orange-dk", trazo: "stroke-orange-dk" },
+  { relleno: "fill-coral", trazo: "stroke-coral" },
+  { relleno: "fill-e1", trazo: "stroke-e1" },
+  { relleno: "fill-e3", trazo: "stroke-e3" },
+  { relleno: "fill-e5", trazo: "stroke-e5" },
+  { relleno: "fill-e2", trazo: "stroke-e2" },
+  { relleno: "fill-e4", trazo: "stroke-e4" },
+  { relleno: "fill-e6", trazo: "stroke-e6" },
+  { relleno: "fill-dim", trazo: "stroke-dim" },
+];
+
 export function colorPlataforma(indice: number): string {
   return PLATAFORMA_COLORES[indice % PLATAFORMA_COLORES.length]!;
 }
