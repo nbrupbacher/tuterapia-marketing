@@ -1,5 +1,6 @@
 import type { Connection, RowDataPacket } from "mysql2/promise";
 import { LOCAL_UTC_OFFSET_HOURS } from "./shared";
+import { sqlProvincia, SIN_ZONA } from "@/lib/zonas";
 
 /**
  * Pacientes nuevos por modalidad: cuántos entran eligiendo presencial.
@@ -28,6 +29,8 @@ export type NuevoPorModalidad = {
   modalidad: "online" | "presencial" | "sin_dato";
   /** Crudo, como lo guarda `login.utm_source`. Vacío = se registró sin utm. */
   utm_source: string;
+  /** Ya canonizada por `lib/zonas.ts`. Solo la trae el grano mensual. */
+  provincia: string;
   n: number;
 };
 
@@ -44,27 +47,94 @@ export type NuevoPorModalidad = {
  * de los trece meses que se están mirando. Un paciente de 2024 que vuelve a
  * comprar hoy no es nuevo hoy.
  */
-function sql(periodo: string, conUtm: boolean): string {
+/**
+ * Una provincia por paciente, y una sola.
+ *
+ * Un paciente carga varias zonas y todas caen en el mismo departamento
+ * (`lib/zonas.ts` lo documenta y lo midió), así que esto normalmente devuelve
+ * una fila por paciente sin tener que elegir. El desempate está igual porque
+ * la propiedad es de los datos de hoy y no del esquema: si mañana alguien
+ * carga Palermo y Mendoza, esta subconsulta se queda con una y el total sigue
+ * dando `pacientes_nuevos`. Sin el desempate, ese paciente se dibujaría en
+ * dos provincias y la suma dejaría de cerrar.
+ *
+ * Gana la provincia con más zonas cargadas; a igualdad, la de menor id, que
+ * es arbitrario pero estable entre corridas.
+ */
+const PROVINCIA_DEL_PACIENTE = `
+  SELECT idPaciente, provincia
+    FROM (SELECT zp.idPaciente,
+                 ${sqlProvincia()} AS provincia,
+                 ROW_NUMBER() OVER (PARTITION BY zp.idPaciente
+                                    ORDER BY COUNT(*) DESC,
+                                             MIN(zp.idDepartamento)) AS rn2
+            FROM zonas_pacientes zp
+            JOIN departamentos d ON d.idDepartamento = zp.idDepartamento
+                                AND d.isoPais = zp.isoPais
+           GROUP BY zp.idPaciente, ${sqlProvincia()}) z
+   WHERE rn2 = 1`;
+
+function sql(periodo: string, conUtm: boolean, conProvincia = false): string {
   // El utm es del REGISTRO (`login.utm_source`) y la modalidad es del PAGO.
   // Son dos momentos distintos del mismo paciente y por eso se pueden cruzar
   // sin contar a nadie dos veces: cada paciente nuevo tiene exactamente un
-  // primer pago y exactamente un utm.
+  // primer pago y exactamente un utm. Con la provincia pasa lo mismo: es del
+  // perfil, y la subconsulta de arriba garantiza una sola.
   const utm = conUtm ? `COALESCE(l.utm_source, '') AS utm_source,` : "";
+  const columnas = [
+    "periodo",
+    "pais",
+    "modalidad",
+    ...(conUtm ? ["utm_source"] : []),
+    ...(conProvincia ? ["provincia"] : []),
+  ];
+  // El join va afuera y no adentro de la ventana: adentro correría sobre los
+  // 202.000 pagos y no sobre los primeros pagos del rango, que son dos
+  // órdenes de magnitud menos.
+  const join = conProvincia
+    ? `      LEFT JOIN (${PROVINCIA_DEL_PACIENTE}) zz ON zz.idPaciente = t.id_paciente`
+    : "";
+  const provincia = conProvincia
+    ? `, COALESCE(zz.provincia, ${comillas(SIN_ZONA)}) AS provincia`
+    : "";
+
   return `
-    SELECT periodo, pais, modalidad, ${conUtm ? "utm_source," : ""} COUNT(*) AS n
-      FROM (SELECT ${periodo} AS periodo,
-                   l.paisDominio AS pais,
-                   COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
-                   ${utm}
-                   ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
-                                      ORDER BY pp.creacion, pp.id) AS rn
-              FROM pacientes_pagos pp
-              JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
-             WHERE pp.confirmado = 1
-               AND l.paisDominio IN ('AR', 'UY')) t
-     WHERE rn = 1 AND periodo >= ? AND periodo <= ?
-     GROUP BY 1, 2, 3${conUtm ? ", 4" : ""}
+    SELECT ${columnas.join(", ")}, n FROM (
+      SELECT t.periodo, t.pais, t.modalidad${conUtm ? ", t.utm_source" : ""}${provincia},
+             COUNT(*) AS n
+        FROM (SELECT ${periodo} AS periodo,
+                     pp.id_paciente,
+                     l.paisDominio AS pais,
+                     COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                     ${utm}
+                     ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
+                                        ORDER BY pp.creacion, pp.id) AS rn
+                FROM pacientes_pagos pp
+                JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+               WHERE pp.confirmado = 1
+                 AND l.paisDominio IN ('AR', 'UY')) t
+${join}
+       WHERE t.rn = 1 AND t.periodo >= ? AND t.periodo <= ?
+       GROUP BY 1, 2, 3${conUtm ? ", 4" : ""}${conProvincia ? (conUtm ? ", 5" : ", 4") : ""}
+    ) f
      ORDER BY 1, 2, 3`;
+}
+
+function comillas(valor: string): string {
+  return `'${valor.replaceAll("'", "''")}'`;
+}
+
+/**
+ * La misma consulta mensual, con los extremos escritos adentro.
+ *
+ * Existe para la sonda: así lo que se valida contra la base es el SQL que
+ * después corre el job, y no una copia parecida que se desincroniza en la
+ * primera corrección. Es el mismo arreglo que `sqlUso` en business-revenue.
+ */
+export function sqlMensualLiteral(desde: string, hasta: string): string {
+  return sql(MES, false, true)
+    .replace("?", comillas(desde))
+    .replace("?", comillas(hasta));
 }
 
 /** El mes local (UTC−3) del pago, 'YYYY-MM'. */
@@ -82,7 +152,7 @@ export function nuevosPorModalidad(
   desde: string,
   hasta: string,
 ): Promise<NuevoPorModalidad[]> {
-  return consultar(conn, sql(MES, false), desde, hasta);
+  return consultar(conn, sql(MES, false, true), desde, hasta);
 }
 
 /**
@@ -112,6 +182,7 @@ async function consultar(
       pais: string;
       modalidad: string;
       utm_source?: string;
+      provincia?: string;
       n: number;
     })[]
   >(consulta, [desde, hasta]);
@@ -122,6 +193,7 @@ async function consultar(
     pais: r.pais,
     modalidad: r.modalidad as NuevoPorModalidad["modalidad"],
     utm_source: r.utm_source ?? "",
+    provincia: r.provincia ?? SIN_ZONA,
     n: Number(r.n),
   }));
 }

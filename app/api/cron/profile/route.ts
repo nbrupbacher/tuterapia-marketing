@@ -5,6 +5,7 @@ import { isCronAuthorized } from "@/lib/auth";
 import { sqlEmpresa } from "@/lib/empresas";
 import { sqlUso } from "@/lib/queries/business-revenue";
 import { LOCAL_UTC_OFFSET_HOURS } from "@/lib/queries/shared";
+import { sqlMensualLiteral } from "@/lib/queries/presencial";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1392,6 +1393,11 @@ const PROBES: Record<string, string> = {
       LEFT JOIN zonas z ON z.idDepartamento = d.idDepartamento
                        AND z.isoPais = d.isoPais
      GROUP BY 1, 2 ORDER BY 1, 3 DESC`,
+
+  // El SQL que va a correr el job, tal cual, contra trece meses. Lo que hay
+  // que mirar: que la suma de cada mes dé `pacientes_nuevos`, o sea que
+  // nadie se cuente en dos provincias.
+  presencial_provincia_mes: sqlMensualLiteral("2025-11", "2026-11"),
 
   // Raw utm_source values, to check the mapping patterns cover the volume.
   utm_sources: `
