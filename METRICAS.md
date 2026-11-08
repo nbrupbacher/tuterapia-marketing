@@ -1247,6 +1247,48 @@ marca esos días desaparecen del eje y los 26 que quedan se dibujan pegados,
 como si hubieran sido consecutivos. Es el mismo arreglo que se le hizo a
 Business el 2026-11-02 y por el mismo motivo.
 
+### De dónde es el paciente
+
+Pedido el 2026-11-08: ver los presenciales partidos por ciudad y no solo por
+país. Sale de `zonas_pacientes`, que ata al paciente con un **departamento**
+—provincia en Argentina— y una **zona** adentro, barrio o ciudad.
+
+Lo que el paciente carga es una **lista de preferencias**, no un domicilio: el
+57% de los presenciales argentinos tiene más de una zona. Eso rompería un
+apilado, porque la misma persona se dibujaría dos veces. Pero medido el
+2026-11-08 sobre seis meses, **las zonas de más caen siempre en el mismo
+departamento**: 183 pares paciente-departamento sobre 183 pacientes con zona,
+exacto, en los dos países. Por eso el corte es por departamento y no por zona.
+
+Igual la consulta elige **una sola provincia por paciente**. Esa propiedad es
+de los datos de hoy y no del esquema: el día que alguien cargue Palermo y
+Mendoza, sin el desempate la suma dejaría de dar `pacientes_nuevos`.
+
+**La cobertura es casi total en presencial y casi nula en online.** Octubre de
+2026: los 30 presenciales argentinos tienen zona, y 439 de los 494 online no.
+Tiene sentido — la zona se pregunta cuando alguien quiere que lo atiendan en
+persona.
+
+El reparto argentino de los últimos doce meses: CABA alrededor del 60%,
+después Buenos Aires, Córdoba, Santa Fe y Mendoza, y una cola de una o dos
+personas en Salta, Entre Ríos, Tucumán y San Luis. En Uruguay, Montevideo es
+el 85% y le siguen Canelones y Maldonado.
+
+**El catálogo está escrito a mano** y lo limpia `lib/zonas.ts`: CABA figura con
+tres nombres distintos, Buenos Aires con cuatro, Santa Fe con dos —una con el
+typo "Sante Fe"— y hay ciudades que figuran como provincias (Rosario, La Plata,
+Mar del Plata, Resistencia). Lo que no cae en ninguna rama vuelve con su nombre
+crudo en vez de irse a un cajón: una provincia nueva tiene que verse mal en
+pantalla, no desaparecer.
+
+**Solo el mensual.** Argentina hace un presencial por día, así que una barra
+diaria partida por ciudad es casi siempre una persona identificable en una
+pantalla compartida. El diario sigue partido por país.
+
+**Es un estado de hoy, no un hecho del mes.** `zonas_pacientes` no tiene fecha,
+igual que `pacientes.id_terapeuta` (§6 quinquies). Si un paciente cambia su
+zona, los meses viejos se reescriben solos en la corrida siguiente.
+
 ### Las dos tablas
 
 Los dos gráficos dibujan **solo presencial**, apilado por país, con los
@@ -1689,8 +1731,9 @@ create table marketing.presencial_mensual (
   mes        date not null,
   pais       text not null,
   modalidad  text not null,  -- online | presencial | sin_dato
+  provincia  text not null,  -- canonizada; 'sin zona' si no cargó ninguna
   nuevos     int  not null,  -- primer pago confirmado de esa modalidad
-  primary key (mes, pais, modalidad)
+  primary key (mes, pais, modalidad, provincia)
 );
 
 create table marketing.presencial_diario (
