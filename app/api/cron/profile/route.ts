@@ -1337,6 +1337,62 @@ const PROBES: Record<string, string> = {
        AND pp.creacion >= DATE_SUB(CURDATE(), INTERVAL 14 MONTH)
      GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
 
+  // Geography, which nobody has looked at yet. The product owner wants the
+  // presencial bars split by city — CABA, Mendoza — and the only place that
+  // lives is `zonas_pacientes`, a link table with no dates in it.
+  //
+  // First question: how many zones does a patient have? If the answer is
+  // often "more than one", the split cannot be a stacked bar, because the
+  // same patient would be drawn twice.
+  zonas_cuantas: `
+    SELECT pais, LEAST(zonas, 4) AS zonas_del_paciente, COUNT(*) AS pacientes
+      FROM (SELECT t.pais,
+                   (SELECT COUNT(*) FROM zonas_pacientes zp
+                     WHERE zp.idPaciente = t.id_paciente) AS zonas
+              FROM (SELECT pp.id_paciente, l.paisDominio AS pais, pp.creacion,
+                           COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                           ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
+                                              ORDER BY pp.creacion, pp.id) AS rn
+                      FROM pacientes_pagos pp
+                      JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+                     WHERE pp.confirmado = 1
+                       AND l.paisDominio IN ('AR', 'UY')) t
+             WHERE t.rn = 1 AND t.modalidad = 'presencial'
+               AND t.creacion >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)) x
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Second: what the split would actually look like. A patient with two
+  // departments is counted in both, which is exactly what the probe above
+  // measures the size of.
+  zonas_departamentos: `
+    SELECT t.pais, d.nombreDep AS departamento,
+           COUNT(DISTINCT t.id_paciente) AS pacientes
+      FROM (SELECT pp.id_paciente, l.paisDominio AS pais, pp.creacion,
+                   COALESCE(pp.tipo_session, 'sin_dato') AS modalidad,
+                   ROW_NUMBER() OVER (PARTITION BY pp.id_paciente
+                                      ORDER BY pp.creacion, pp.id) AS rn
+              FROM pacientes_pagos pp
+              JOIN login l ON l.id = pp.id_paciente AND l.tipo = 1
+             WHERE pp.confirmado = 1 AND l.paisDominio IN ('AR', 'UY')) t
+      JOIN zonas_pacientes zp ON zp.idPaciente = t.id_paciente
+      JOIN departamentos d ON d.idDepartamento = zp.idDepartamento
+                          AND d.isoPais = zp.isoPais
+     WHERE t.rn = 1 AND t.modalidad = 'presencial'
+       AND t.creacion >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+     GROUP BY 1, 2 ORDER BY 1, 3 DESC`,
+
+  // And the catalogue itself: nombres only, no patient attached. Tells us
+  // whether a "zona" is a neighbourhood inside a city or something else.
+  zonas_catalogo: `
+    SELECT d.isoPais AS pais, d.nombreDep AS departamento,
+           COUNT(z.idZona) AS zonas,
+           SUBSTRING(GROUP_CONCAT(z.nombreZona ORDER BY z.nombreZona
+                                  SEPARATOR ' · '), 1, 180) AS ejemplos
+      FROM departamentos d
+      LEFT JOIN zonas z ON z.idDepartamento = d.idDepartamento
+                       AND z.isoPais = d.isoPais
+     GROUP BY 1, 2 ORDER BY 1, 3 DESC`,
+
   // Raw utm_source values, to check the mapping patterns cover the volume.
   utm_sources: `
     SELECT COALESCE(NULLIF(utm_source, ''), '(sin utm)') AS utm_source,
