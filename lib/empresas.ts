@@ -51,7 +51,18 @@ export const EMPRESAS: Empresa[] = [
 
   // El resto. Los cupones "particular" de una empresa son la misma empresa.
   { nombre: "Farmashop", porNombre: ["%farmashop%"] },
-  { nombre: "TCS", porNombre: ["%tcs%"] },
+  // El código además del nombre. `#continuarTT` ya cae acá, pero cae porque
+  // su NOMBRE dice TCS, no por el código: si alguien edita ese nombre, 22
+  // pacientes se van de TCS sin que nada avise. El dueño del producto
+  // confirmó el 2026-11-12 que el cupón es de ellos, así que queda anclado a
+  // lo que no se edita. Va también la variante sin `#`, que existe con tres
+  // pacientes y que `empresas_sin_mapear` no mira, porque esa sonda solo
+  // lista códigos que empiezan con `#`.
+  {
+    nombre: "TCS",
+    porNombre: ["%tcs%"],
+    porCodigo: ["#continuartt%", "continuartt%"],
+  },
   { nombre: "UTEC", porNombre: ["%utec%"] },
   { nombre: "UTE", porNombre: ["demo ute%"] },
   { nombre: "December Labs", porNombre: ["%december labs%"] },

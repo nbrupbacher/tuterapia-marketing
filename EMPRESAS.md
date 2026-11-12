@@ -51,7 +51,7 @@ dos veces. Sirve para ordenar, no para publicar.
 | Empresa | Familias de cupón | Cupones | Pacientes (aprox.) | País |
 |---|---|---|---|---|
 | Farmashop | `#bienestarfarma25` + familia "Líderes Farmashop" (uno por persona) | ~26 | ~350 | UY |
-| TCS | `#BienestarTCS`, `#continuarTT` | 2 | 252 | UY |
+| TCS | `#BienestarTCS`, `#continuarTT`, `continuarTT` | 3 | 257 | UY |
 | GXC Consulting (Vesta) | `VestaGXC` | 1 | 32 | UY |
 | Nodum (Vesta) | `VestaNDM` | 2 | 30 | UY |
 | Datalogic (Vesta) | `VestaDL` | 1 | 10 | UY |
@@ -168,6 +168,27 @@ Descartados a propósito, salvo que en la reunión digan lo contrario:
 `#meta2023` (parece campaña de ads) y `#boron` (va con el promocional
 `terapiaboron`).
 
+## El corte de TCS en agosto de 2026
+
+Confirmado con el dueño del producto el **2026-11-12**: `#continuarTT` es de
+TCS. Ya caía ahí —el *nombre* del cupón dice TCS— pero ahora está anclado
+también por código, porque depender del nombre es depender de un campo que
+alguien edita.
+
+Vale anotar lo que muestran las fechas, porque explica un escalón que en el
+tablero parece un error y no lo es:
+
+| Cupón | Pacientes | Primer uso | Último uso |
+|---|---|---|---|
+| `#BienestarTCS` | 232 | 2025-07-31 | 2026-08-25 |
+| `#continuarTT` | 22 | 2026-08-28 | en uso |
+| `continuarTT` | 3 | 2026-10-12 | en uso |
+
+`#BienestarTCS` dejó de usarse el 25 de agosto y `#continuarTT` arrancó tres
+días después con 22 de los 232 pacientes. Por eso las sesiones de TCS pasan de
+408 en agosto a 65 en septiembre, y por eso el ingreso deja de ser cero: el
+cupón viejo no dejaba ingreso registrado y el nuevo sí.
+
 ## Lo que sigue abierto
 
 Nada del mapeo. Lo que falta es de la pestaña, no de las empresas: **qué es un
@@ -192,6 +213,12 @@ su cupón se llama "Fraylog (Pase Libre)".
 Para que un cupón nuevo no desaparezca de los números, la sonda
 `empresas_sin_mapear` lista los que empiezan con `#` y no cayeron en ninguna
 empresa. Hoy ahí tienen que quedar solo las campañas y `#practicante`.
+
+**Punto ciego conocido**: esa sonda filtra por `codigo LIKE '#%'`, así que un
+cupón de empresa sin `#` no la activa. No es hipotético —Vesta es una familia
+entera sin `#`, y TCS tiene un `continuarTT` sin numeral con tres pacientes—.
+Mientras siga así, un cupón de empresa sin `#` que el mapeo no vea desaparece
+en silencio.
 
 El error contrario —un cupón que cae en una empresa que no es la suya— lo
 busca `empresas_cupones`: el **código** de cada cupón de cada empresa, con su
