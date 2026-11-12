@@ -1611,6 +1611,128 @@ const PROBES: Record<string, string> = {
       JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
      WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
      GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
+
+  // ── Segunda vuelta: el saldo y el reparto entre terapeutas ───────────────
+  //
+  // La primera vuelta dejó claro que el 29% es recompra: los mismos pacientes
+  // pagando más veces. Faltan las dos preguntas que `pacientes_pagos.usadas` y
+  // `sesiones.id_terapeuta` sí pueden contestar y que la primera vuelta no
+  // vio porque no se conocían esas columnas.
+
+  // Cuánto de lo vendido todavía no se usó, por mes del pago. Es el pasivo
+  // que deja una venta adelantada (METRICAS.md §4: el saldo sin usar es
+  // pasivo, no ganancia).
+  //
+  // Los meses no son comparables entre sí —el pago de noviembre tuvo menos
+  // días para consumirse— así que lo que se mira es la forma de la serie, no
+  // el último número contra el anterior.
+  uy_saldo_por_mes: `
+    SELECT DATE_FORMAT(DATE_SUB(p.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR),
+                       '%Y-%m') AS mes_del_pago,
+           COUNT(*) AS pagos,
+           SUM(p.sesiones) AS vendidas,
+           SUM(p.usadas) AS usadas,
+           SUM(p.sesiones - p.usadas) AS saldo,
+           ROUND(100 * SUM(p.usadas) / SUM(p.sesiones), 1) AS pct_usado
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY} AND p.creacion >= '2026-05-01 03:00:00'
+     GROUP BY 1 ORDER BY 1`,
+
+  // Lo mismo con la madurez igualada: solo los pagos del 1 al 4, mirados al
+  // día 11 del mismo mes. Los tres tramos tuvieron entre siete y diez días
+  // para consumirse, así que acá sí se comparan.
+  //
+  // `usadas` es un contador de HOY, no una foto del día 11, así que esto
+  // sobreestima a los meses viejos. Sirve para ver si noviembre consume MENOS
+  // que octubre, que es la dirección que importa; si consumiera más, el
+  // número estaría a favor de octubre y habría que medirlo de otra forma.
+  uy_consumo_madurez_igual: `
+    SELECT DATE_FORMAT(DATE_SUB(p.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR),
+                       '%Y-%m') AS mes_del_pago,
+           COUNT(*) AS pagos, SUM(p.sesiones) AS vendidas,
+           SUM(p.usadas) AS usadas,
+           ROUND(100 * SUM(p.usadas) / SUM(p.sesiones), 1) AS pct_usado
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY}
+       AND ((p.creacion >= '2026-09-01 03:00:00' AND p.creacion < '2026-09-05 03:00:00')
+         OR (p.creacion >= '2026-10-01 03:00:00' AND p.creacion < '2026-10-05 03:00:00')
+         OR (p.creacion >= '2026-11-01 03:00:00' AND p.creacion < '2026-11-05 03:00:00'))
+     GROUP BY 1 ORDER BY 1`,
+
+  // El reparto de las sesiones REALIZADAS entre terapeutas, con la fecha de
+  // la sesión y el terapeuta de la sesión: `sesiones.id_terapeuta` sí está
+  // fechado, al revés de `pacientes.id_terapeuta`. Esta es la respuesta a
+  // "¿está mejor distribuido?" sin la advertencia de la primera vuelta.
+  uy_terapeutas_realizadas: `
+    SELECT CASE
+             WHEN s.fecha >= '2026-09-01 03:00:00'
+              AND s.fecha <  '2026-09-12 03:00:00' THEN '2026-09'
+             WHEN s.fecha >= '2026-10-01 03:00:00'
+              AND s.fecha <  '2026-10-12 03:00:00' THEN '2026-10'
+             WHEN s.fecha >= '2026-11-01 03:00:00'
+              AND s.fecha <  '2026-11-12 03:00:00' THEN '2026-11'
+           END AS tramo,
+           COUNT(DISTINCT s.id_terapeuta) AS terapeutas,
+           COUNT(DISTINCT s.id_paciente) AS pacientes,
+           COUNT(*) AS realizadas,
+           ROUND(COUNT(*) / COUNT(DISTINCT s.id_terapeuta), 2) AS realizadas_por_terapeuta,
+           ROUND(COUNT(DISTINCT s.id_paciente)
+                 / COUNT(DISTINCT s.id_terapeuta), 2) AS pacientes_por_terapeuta
+      FROM sesiones s
+      JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+     WHERE s.realizada = 1 AND l.paisDominio = 'UY'
+       AND ((s.fecha >= '2026-09-01 03:00:00' AND s.fecha < '2026-09-12 03:00:00')
+         OR (s.fecha >= '2026-10-01 03:00:00' AND s.fecha < '2026-10-12 03:00:00')
+         OR (s.fecha >= '2026-11-01 03:00:00' AND s.fecha < '2026-11-12 03:00:00'))
+     GROUP BY 1 ORDER BY 1`,
+
+  // La concentración de lo realizado, por puesto y sin el id. Si los
+  // primeros diez se llevan la misma tajada que el mes pasado, el reparto no
+  // cambió por más que haya más terapeutas.
+  uy_terapeutas_realizadas_concentracion: `
+    WITH por_terapeuta AS (
+      SELECT CASE
+               WHEN s.fecha >= '2026-09-01 03:00:00'
+                AND s.fecha <  '2026-09-12 03:00:00' THEN '2026-09'
+               WHEN s.fecha >= '2026-10-01 03:00:00'
+                AND s.fecha <  '2026-10-12 03:00:00' THEN '2026-10'
+               WHEN s.fecha >= '2026-11-01 03:00:00'
+                AND s.fecha <  '2026-11-12 03:00:00' THEN '2026-11'
+             END AS tramo,
+             s.id_terapeuta, COUNT(*) AS realizadas
+        FROM sesiones s
+        JOIN login l ON l.id = s.id_paciente AND l.tipo = 1
+       WHERE s.realizada = 1 AND l.paisDominio = 'UY'
+         AND ((s.fecha >= '2026-09-01 03:00:00' AND s.fecha < '2026-09-12 03:00:00')
+           OR (s.fecha >= '2026-10-01 03:00:00' AND s.fecha < '2026-10-12 03:00:00')
+           OR (s.fecha >= '2026-11-01 03:00:00' AND s.fecha < '2026-11-12 03:00:00'))
+       GROUP BY 1, 2),
+    rankeado AS (
+      SELECT tramo, realizadas,
+             ROW_NUMBER() OVER (PARTITION BY tramo
+                                ORDER BY realizadas DESC) AS puesto,
+             SUM(realizadas) OVER (PARTITION BY tramo) AS total_tramo
+        FROM por_terapeuta)
+    SELECT tramo, puesto, realizadas, total_tramo,
+           ROUND(100 * SUM(realizadas) OVER (PARTITION BY tramo ORDER BY puesto)
+                 / total_tramo, 1) AS pct_acumulado
+      FROM rankeado WHERE puesto <= 10 ORDER BY tramo, puesto`,
+
+  // Y la venta repartida entre terapeutas, atando el pago a las sesiones que
+  // creó (`sesiones.id_pago`). Fechado por el pago, así que es comparable
+  // mes a mes sin la advertencia de `pacientes.id_terapeuta`.
+  uy_terapeutas_vendidas: `
+    SELECT ${TRAMO_1_11} AS tramo,
+           COUNT(DISTINCT s.id_terapeuta) AS terapeutas,
+           COUNT(*) AS sesiones_creadas,
+           ROUND(COUNT(*) / COUNT(DISTINCT s.id_terapeuta), 2) AS sesiones_por_terapeuta
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+      JOIN sesiones s ON s.id_pago = p.id
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1 ORDER BY 1`,
 };
 
 export async function GET(request: Request) {
