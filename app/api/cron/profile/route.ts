@@ -1639,15 +1639,18 @@ const PROBES: Record<string, string> = {
      WHERE ${VENTA_UY} AND p.creacion >= '2026-05-01 03:00:00'
      GROUP BY 1 ORDER BY 1`,
 
-  // Lo mismo con la madurez igualada: solo los pagos del 1 al 4, mirados al
-  // día 11 del mismo mes. Los tres tramos tuvieron entre siete y diez días
-  // para consumirse, así que acá sí se comparan.
+  // Los pagos del 1 al 4 de cada mes, con lo que lleva usado cada uno.
   //
-  // `usadas` es un contador de HOY, no una foto del día 11, así que esto
-  // sobreestima a los meses viejos. Sirve para ver si noviembre consume MENOS
-  // que octubre, que es la dirección que importa; si consumiera más, el
-  // número estaría a favor de octubre y habría que medirlo de otra forma.
-  uy_consumo_madurez_igual: `
+  // NO es una comparación de madurez igual, y se intentó que lo fuera:
+  // `usadas` es un contador de HOY, no una foto del día 11, así que el pago
+  // de septiembre tuvo diez semanas para consumirse y el de noviembre una y
+  // media. Los tres números no se comparan entre sí — 94,4%, 89,3% y 70,1%
+  // es casi todo la edad.
+  //
+  // Para medir esto de verdad hace falta guardar el saldo cada noche, que es
+  // un cambio en el job y no una sonda. Queda igual porque el saldo de hoy,
+  // por mes de pago, sirve para ver cuánto hay sin entregar.
+  uy_consumo_primeros_dias: `
     SELECT DATE_FORMAT(DATE_SUB(p.creacion, INTERVAL ${LOCAL_UTC_OFFSET_HOURS} HOUR),
                        '%Y-%m') AS mes_del_pago,
            COUNT(*) AS pagos, SUM(p.sesiones) AS vendidas,
