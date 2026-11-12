@@ -1047,6 +1047,38 @@ const PROBES: Record<string, string> = {
      GROUP BY 1, c.id, c.codigo, c.pais
      ORDER BY 1, primero`,
 
+  // `#continuarTT` es de TCS, dicho por el dueño del producto el 2026-11-12.
+  //
+  // No está en `empresas_sin_mapear`, así que hoy cae en ALGUNA empresa: hay
+  // que ver en cuál antes de tocar el mapeo, porque si no es TCS hay una
+  // empresa que viene contando pacientes que no son suyos.
+  //
+  // Devuelve el código y nunca el nombre, como el resto de las sondas de
+  // cupones: el nombre puede ser el de un paciente.
+  cupon_continuar: `
+    SELECT c.codigo, c.pais, c.activo,
+           ${sqlEmpresa()} AS empresa_hoy,
+           ${ES_PROMOCIONAL} AS es_promocional,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           COUNT(DISTINCT pc.id_pago) AS pagos,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      LEFT JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE LOWER(c.codigo) LIKE '%continuar%'
+     GROUP BY c.id, c.codigo, c.pais, c.activo
+     ORDER BY pacientes DESC`,
+
+  // La familia de TCS tal como el mapeo la ve hoy, por código.
+  cupones_de_tcs: `
+    SELECT c.codigo, c.pais,
+           COUNT(DISTINCT pc.id_paciente) AS pacientes,
+           MIN(pc.fecha) AS primero, MAX(pc.fecha) AS ultimo
+      FROM cupones c
+      JOIN pacientes_cupones pc ON pc.id_cupon = c.id
+     WHERE ${sqlEmpresa()} = 'TCS'
+     GROUP BY c.id, c.codigo, c.pais
+     ORDER BY pacientes DESC`,
+
   // MySQL 8 has window functions, 5.7 does not. Decides how percentiles run.
   version: `SELECT VERSION() AS version`,
 
