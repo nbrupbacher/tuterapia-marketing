@@ -57,6 +57,37 @@ const BUSINESS_PAGOS = `(SELECT DISTINCT pc.id_pago
 const DOS_MESES = "s.fecha >= '2026-09-01 03:00:00' AND s.fecha < '2026-11-01 03:00:00'";
 const TRECE_MESES = "s.fecha >= '2025-10-01 03:00:00' AND s.fecha < '2026-11-01 03:00:00'";
 
+/**
+ * Los tres tramos del 1 al 11, en hora local (METRICAS.md §1).
+ *
+ * Tramos iguales y no meses enteros: noviembre tiene once días cerrados y
+ * octubre treinta y uno, y comparar los dos enteros no dice nada. Los tres
+ * meses entran en una sola consulta porque septiembre es el control: dos
+ * puntos no distinguen un cambio de una semana rara.
+ *
+ * Usan el alias `p` para `pacientes_pagos`.
+ */
+const TRAMO_1_11 = `CASE
+    WHEN p.creacion >= '2026-09-01 03:00:00'
+     AND p.creacion <  '2026-09-12 03:00:00' THEN '2026-09'
+    WHEN p.creacion >= '2026-10-01 03:00:00'
+     AND p.creacion <  '2026-10-12 03:00:00' THEN '2026-10'
+    WHEN p.creacion >= '2026-11-01 03:00:00'
+     AND p.creacion <  '2026-11-12 03:00:00' THEN '2026-11'
+  END`;
+
+const EN_TRAMOS_1_11 = `(
+     (p.creacion >= '2026-09-01 03:00:00' AND p.creacion < '2026-09-12 03:00:00')
+  OR (p.creacion >= '2026-10-01 03:00:00' AND p.creacion < '2026-10-12 03:00:00')
+  OR (p.creacion >= '2026-11-01 03:00:00' AND p.creacion < '2026-11-12 03:00:00'))`;
+
+/**
+ * La guarda estándar de una venta uruguaya: pago confirmado, con sesiones, y
+ * el país del pago. La misma que usa `sesionesVendidasPorDia`, para que estas
+ * sondas den exactamente el total que dibuja el tablero.
+ */
+const VENTA_UY = `p.confirmado = 1 AND p.sesiones > 0 AND p.paisDominio = 'UY'`;
+
 const PROBES: Record<string, string> = {
   // "Sessions per patient" is expected around 9,6 in AR and 13 in UY. The
   // stored figure is 3,77 and 4,46 — the LTV multiplier, which counts only the
@@ -1406,6 +1437,180 @@ const PROBES: Record<string, string> = {
       FROM login
      WHERE tipo = 1 AND creacion >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
      GROUP BY 1, 2 ORDER BY n DESC LIMIT 60`,
+
+  // ── Noviembre de Uruguay, 29% arriba en sesiones vendidas ────────────────
+  //
+  // Lo que ya se sabe de los agregados, en el tramo 1 al 11: vendidas 1.184 →
+  // 1.522 (+28,5%), realizadas 950 → 963 (+1,4%) y activos 769 → 760. O sea
+  // que no entró más gente ni se hizo más terapia: los mismos pacientes
+  // compraron más. Lo que falta es a nivel pago, que no está en Supabase.
+  //
+  // Las tres preguntas que estas sondas contestan: si el paquete es más
+  // grande, si la recompra llega antes, y si la venta está más repartida
+  // entre terapeutas.
+  esquema_pagos: `
+    SELECT TABLE_NAME AS tabla, COLUMN_NAME AS columna, COLUMN_TYPE AS tipo
+      FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME IN ('pacientes_pagos', 'sesiones', 'pacientes')
+     ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+
+  // El numerador y el denominador separados: cuántos pagos, de cuánta gente,
+  // de qué tamaño. Si sube `sesiones_por_pago` el paquete creció; si sube
+  // `pagos_por_comprador` la misma gente compró más veces.
+  uy_ventas_tramo: `
+    SELECT ${TRAMO_1_11} AS tramo,
+           COUNT(*) AS pagos,
+           COUNT(DISTINCT p.id_paciente) AS compradores,
+           SUM(p.sesiones) AS sesiones,
+           ROUND(SUM(p.sesiones) / COUNT(*), 2) AS sesiones_por_pago,
+           ROUND(COUNT(*) / COUNT(DISTINCT p.id_paciente), 2)
+             AS pagos_por_comprador,
+           ROUND(SUM(p.sesiones) / COUNT(DISTINCT p.id_paciente), 2)
+             AS sesiones_por_comprador
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1 ORDER BY 1`,
+
+  // Lo mismo partido por modalidad, porque el presencial de Uruguay subió
+  // 40% y el online 21%: hay que saber si los dos mueven el paquete o uno.
+  uy_ventas_modalidad: `
+    SELECT ${TRAMO_1_11} AS tramo,
+           COALESCE(p.tipo_session, 'sin_dato') AS modalidad,
+           COUNT(*) AS pagos,
+           COUNT(DISTINCT p.id_paciente) AS compradores,
+           SUM(p.sesiones) AS sesiones,
+           ROUND(SUM(p.sesiones) / COUNT(*), 2) AS sesiones_por_pago
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // El tamaño del paquete sin promediar. Un promedio que sube puede ser todo
+  // el mundo comprando una sesión más o cuatro personas comprando veinte.
+  uy_paquetes: `
+    SELECT ${TRAMO_1_11} AS tramo, p.sesiones AS paquete,
+           COUNT(*) AS pagos, SUM(p.sesiones) AS sesiones
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Primer pago de la vida del paciente contra recompra. Si el aumento está
+  // en la recompra, la base está comprando más; si está en el primer pago,
+  // entraron más pacientes y el número de nuevos del tablero lo tapa.
+  uy_primer_pago_vs_recompra: `
+    SELECT ${TRAMO_1_11} AS tramo,
+           CASE WHEN p.creacion = f.primero THEN 'primer_pago' ELSE 'recompra' END
+             AS tipo,
+           COUNT(*) AS pagos,
+           COUNT(DISTINCT p.id_paciente) AS compradores,
+           SUM(p.sesiones) AS sesiones,
+           ROUND(SUM(p.sesiones) / COUNT(*), 2) AS sesiones_por_pago
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+      JOIN (SELECT id_paciente, MIN(creacion) AS primero
+              FROM pacientes_pagos
+             WHERE confirmado = 1 AND sesiones > 0
+             GROUP BY id_paciente) f ON f.id_paciente = p.id_paciente
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Cuántos días pasaron desde el pago anterior del mismo paciente. Es la
+  // medida de retención que se puede medir hoy: si la recompra llega antes,
+  // el paciente se está quedando.
+  //
+  // `sin_pago_previo` junta dos casos distintos —el primer pago de la vida y
+  // uno cuyo anterior quedó antes de noviembre de 2025— porque la ventana del
+  // LAG arranca ahí. La separación limpia la da `uy_primer_pago_vs_recompra`.
+  uy_recompra_gap: `
+    WITH pagos AS (
+      SELECT p.id_paciente, p.creacion, p.sesiones,
+             LAG(p.creacion) OVER (PARTITION BY p.id_paciente
+                                   ORDER BY p.creacion) AS anterior
+        FROM pacientes_pagos p
+        JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+       WHERE ${VENTA_UY} AND p.creacion >= '2025-11-01 03:00:00')
+    SELECT CASE
+             WHEN creacion >= '2026-09-01 03:00:00'
+              AND creacion <  '2026-09-12 03:00:00' THEN '2026-09'
+             WHEN creacion >= '2026-10-01 03:00:00'
+              AND creacion <  '2026-10-12 03:00:00' THEN '2026-10'
+             WHEN creacion >= '2026-11-01 03:00:00'
+              AND creacion <  '2026-11-12 03:00:00' THEN '2026-11'
+           END AS tramo,
+           CASE WHEN anterior IS NULL                      THEN 'z_sin_pago_previo'
+                WHEN DATEDIFF(creacion, anterior) <=  7    THEN 'a_0_7'
+                WHEN DATEDIFF(creacion, anterior) <= 14    THEN 'b_8_14'
+                WHEN DATEDIFF(creacion, anterior) <= 21    THEN 'c_15_21'
+                WHEN DATEDIFF(creacion, anterior) <= 31    THEN 'd_22_31'
+                WHEN DATEDIFF(creacion, anterior) <= 60    THEN 'e_32_60'
+                ELSE 'f_mas_60' END AS dias_desde_el_anterior,
+           COUNT(*) AS pagos, SUM(sesiones) AS sesiones
+      FROM pagos
+     WHERE (creacion >= '2026-09-01 03:00:00' AND creacion < '2026-09-12 03:00:00')
+        OR (creacion >= '2026-10-01 03:00:00' AND creacion < '2026-10-12 03:00:00')
+        OR (creacion >= '2026-11-01 03:00:00' AND creacion < '2026-11-12 03:00:00')
+     GROUP BY 1, 2 ORDER BY 1, 2`,
+
+  // Cuántos terapeutas hay detrás de esas ventas y cuánto le toca a cada uno.
+  //
+  // OJO con leer esto mes contra mes: `pacientes.id_terapeuta` es un estado de
+  // HOY y no tiene fecha (lib/sync-terapeuta.ts), así que las ventas de
+  // octubre se le atribuyen al terapeuta que el paciente tiene ahora. Sirve
+  // para ver si la venta está más o menos repartida; no sirve para decir que
+  // un terapeuta puntual mejoró.
+  uy_terapeutas: `
+    SELECT ${TRAMO_1_11} AS tramo,
+           COUNT(DISTINCT pa.id_terapeuta) AS terapeutas,
+           COUNT(DISTINCT p.id_paciente) AS compradores,
+           SUM(p.sesiones) AS sesiones,
+           SUM(pa.id_terapeuta IS NULL) AS pagos_sin_terapeuta,
+           ROUND(COUNT(DISTINCT p.id_paciente)
+                 / COUNT(DISTINCT pa.id_terapeuta), 2)
+             AS compradores_por_terapeuta,
+           ROUND(SUM(p.sesiones) / COUNT(DISTINCT pa.id_terapeuta), 2)
+             AS sesiones_por_terapeuta
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+      LEFT JOIN pacientes pa ON pa.id_login = p.id_paciente
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1 ORDER BY 1`,
+
+  // La concentración, por puesto y sin el id: si los primeros doce se llevan
+  // la misma proporción que el mes pasado, la distribución no cambió.
+  uy_terapeutas_concentracion: `
+    WITH por_terapeuta AS (
+      SELECT ${TRAMO_1_11} AS tramo, pa.id_terapeuta,
+             SUM(p.sesiones) AS sesiones,
+             COUNT(DISTINCT p.id_paciente) AS compradores
+        FROM pacientes_pagos p
+        JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+        JOIN pacientes pa ON pa.id_login = p.id_paciente
+       WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+         AND pa.id_terapeuta IS NOT NULL
+       GROUP BY 1, 2),
+    rankeado AS (
+      SELECT tramo, sesiones, compradores,
+             ROW_NUMBER() OVER (PARTITION BY tramo
+                                ORDER BY sesiones DESC) AS puesto
+        FROM por_terapeuta)
+    SELECT tramo, puesto, sesiones, compradores
+      FROM rankeado WHERE puesto <= 12 ORDER BY tramo, puesto`,
+
+  // El precio, para saber si el 29% en sesiones es 29% en plata. `monto` es
+  // del paquete entero, así que el precio por sesión sale de la división.
+  uy_precio: `
+    SELECT ${TRAMO_1_11} AS tramo, p.moneda,
+           COALESCE(p.tipo_session, 'sin_dato') AS modalidad,
+           COUNT(*) AS pagos, SUM(p.sesiones) AS sesiones,
+           ROUND(SUM(p.monto), 2) AS monto,
+           ROUND(SUM(p.monto) / SUM(p.sesiones), 2) AS precio_por_sesion
+      FROM pacientes_pagos p
+      JOIN login l ON l.id = p.id_paciente AND l.tipo = 1
+     WHERE ${VENTA_UY} AND ${EN_TRAMOS_1_11}
+     GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`,
 };
 
 export async function GET(request: Request) {
